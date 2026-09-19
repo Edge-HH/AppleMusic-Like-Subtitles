@@ -1,0 +1,78 @@
+name: "🧪 构建测试与打包"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "构建-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  title-preset:
+    name: "🎬 标题预设"
+    runs-on: windows-latest
+    steps:
+      - name: "📥 检出代码"
+        uses: actions/checkout@v4
+
+      - name: "🐍 配置 Python"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: "📦 安装测试依赖"
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: "🏗️ 生成标题预设"
+        shell: pwsh
+        run: ./Build-Title-Preset.ps1
+
+      - name: "✅ 执行标题预设测试"
+        run: python -m unittest discover -s tests -v
+
+      - name: "⬆️ 上传标题预设产物"
+        uses: actions/upload-artifact@v4
+        with:
+          name: AM-Lyrics-Title-Preset
+          path: |
+            dist/AM Lyrics 32.setting
+            dist/AM Lyrics 64.setting
+            dist/AM-Lyrics.drfx
+          if-no-files-found: error
+
+  workflow-plugin:
+    name: "🧩 工作流插件"
+    runs-on: windows-latest
+    steps:
+      - name: "📥 检出代码"
+        uses: actions/checkout@v4
+
+      - name: "🟢 配置 Node.js"
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: workflow-plugin/package-lock.json
+
+      - name: "🏗️ 测试并生成插件包"
+        shell: pwsh
+        run: ./Build-Plugin-Package.ps1
+
+      - name: "⬆️ 上传插件包产物"
+        uses: actions/upload-artifact@v4
+        with:
+          name: AMLL-Resolve-Workflow-Plugin
+          path: |
+            dist/AMLL-Resolve-Workflow-v*.zip
+            dist/AMLL-Resolve-Workflow-v*.zip.sha256
+          if-no-files-found: error
