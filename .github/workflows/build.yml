@@ -22,13 +22,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: "📥 检出代码"
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: "🐍 配置 Python"
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
+          cache-dependency-path: requirements-dev.txt
 
       - name: "📦 安装测试依赖"
         run: python -m pip install -r requirements-dev.txt
@@ -41,7 +42,7 @@ jobs:
         run: python -m unittest discover -s tests -v
 
       - name: "⬆️ 上传标题预设产物"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: AM-Lyrics-Title-Preset
           path: |
@@ -55,12 +56,12 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: "📥 检出代码"
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: "🟢 配置 Node.js"
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
           cache-dependency-path: workflow-plugin/package-lock.json
 
@@ -69,7 +70,7 @@ jobs:
         run: ./Build-Plugin-Package.ps1
 
       - name: "⬆️ 上传插件包产物"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: AMLL-Resolve-Workflow-Plugin
           path: |
