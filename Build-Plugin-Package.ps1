@@ -1,12 +1,14 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 [CmdletBinding()]
 param(
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'dist'),
+    [string]$OutputDirectory,
     [switch]$SkipTests
 )
 
 $ErrorActionPreference = 'Stop'
-$pluginRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'workflow-plugin'))
+$scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
+if (-not $OutputDirectory) { $OutputDirectory = Join-Path $scriptRoot 'dist' }
+$pluginRoot = [IO.Path]::GetFullPath((Join-Path $scriptRoot 'workflow-plugin'))
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 $packageJsonPath = Join-Path $pluginRoot 'package.json'
 $manifestPath = Join-Path $pluginRoot 'manifest.xml'
@@ -58,13 +60,16 @@ try {
 }
 
 New-Item -ItemType Directory -Path $output -Force | Out-Null
-$archivePath = Join-Path $output "AMLL-Resolve-Workflow-v$version.zip"
+$archivePath = Join-Path $output "AMLL-Resolve-Script-v$version.zip"
 $checksumPath = "$archivePath.sha256"
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $includePaths = @(
+    'launcher.lua',
+    'launch.ps1',
+    'script-host.py',
     'main.js',
     'preload.js',
     'manifest.xml',
@@ -102,7 +107,7 @@ try {
     try {
         foreach ($file in $files) {
             $relative = $file.FullName.Substring($pluginRoot.Length).TrimStart([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
-            $entryName = 'AMLL-Resolve-Workflow/' + ($relative -replace '\\', '/')
+            $entryName = 'AMLL-Resolve-Script/' + ($relative -replace '\\', '/')
             $entry = $archive.CreateEntry($entryName, [IO.Compression.CompressionLevel]::Optimal)
             $entry.LastWriteTime = [DateTimeOffset]::new(2026, 1, 1, 0, 0, 0, [TimeSpan]::Zero)
             $sourceStream = [IO.File]::OpenRead($file.FullName)

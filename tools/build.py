@@ -1,4 +1,4 @@
-"""Build a lightweight localized Fusion title with Apple Music-inspired motion."""
+"""Generate a native Fusion glyph renderer with bounded, persistent motion slots."""
 from pathlib import Path
 import argparse
 import json
@@ -7,184 +7,210 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = (ROOT / 'src/timing.lua').read_text(encoding='utf-8-sig')
 MAX_CHARACTERS = 256
-
+SLOT_COUNT = 16
+DEFAULTS = dict(Duration=4, Offset=0, FPS=0, FadeWidth=.5, IdleOpacity=.4,
+                ActiveOpacity=1, OverallOpacity=1, FloatHeight=.05, FloatDuration=1,
+                Emphasis=1, EmphasisDuration=1, Glow=1, LastWordBoost=1, BackgroundVocal=0,
+                Size=.075, CharacterSpacing=1, LineSpacing=1, Red1=1, Green1=1, Blue1=1,
+                SegmentStart=1, SegmentEnd=1)
 LABELS = {
-    'zh': {
-        'lyrics': '歌词（用 | 分段）', 'timings': '逐字时间（开始-结束秒）', 'duration': '自动唱完秒数',
-        'offset': '整体延后秒数', 'softness': '高亮过渡柔和度', 'fps': '帧率（0 为合成帧率）',
-        'fade': '单字内渐变宽度', 'bounce': '轻微跳动强度', 'bounce_height': '上浮幅度',
-        'idle_opacity': '未唱透明度', 'active_opacity': '已唱透明度', 'idle_brightness': '未唱亮度',
-        'idle_blur': '未唱模糊', 'active_blur': '已唱模糊', 'glow_gain': '高亮炫光强度',
-        'glow_size': '高亮炫光大小', 'overall': '总透明度', 'status': '输入检查',
-        'font': '字体', 'style': '字重', 'size': '字号', 'position': '位置', 'tracking': '字距',
-        'line_spacing': '行距', 'color': '高亮颜色', 'reset_motion': '重置动画参数', 'reset_look': '重置样式参数',
-    },
-    'en': {
-        'lyrics': 'Lyrics (separate words with |)', 'timings': 'Word timings (start-end seconds)', 'duration': 'Auto duration (seconds)',
-        'offset': 'Global delay (seconds)', 'softness': 'Highlight transition softness', 'fps': 'FPS (0 uses composition rate)',
-        'fade': 'In-word gradient width', 'bounce': 'Gentle bounce amount', 'bounce_height': 'Lift amount',
-        'idle_opacity': 'Unplayed opacity', 'active_opacity': 'Played opacity', 'idle_brightness': 'Unplayed brightness',
-        'idle_blur': 'Unplayed blur', 'active_blur': 'Played blur', 'glow_gain': 'Highlight glow gain',
-        'glow_size': 'Highlight glow size', 'overall': 'Overall opacity', 'status': 'Input status',
-        'font': 'Font', 'style': 'Weight', 'size': 'Size', 'position': 'Position', 'tracking': 'Tracking',
-        'line_spacing': 'Line spacing', 'color': 'Highlight color', 'reset_motion': 'Reset motion', 'reset_look': 'Reset appearance',
-    },
-}
-
-DEFAULTS = {
-    'Duration': 4, 'Offset': 0, 'Softness': 0.72, 'FPS': 0, 'FadeWidth': 0.035,
-    'BounceAmount': 0.035, 'BounceHeight': 0.012, 'IdleOpacity': 0.28, 'ActiveOpacity': 1,
-    'IdleBrightness': 0.52, 'IdleBlur': 0.75, 'ActiveBlur': 0, 'GlowGain': 1.35,
-    'GlowSize': 4.5, 'OverallOpacity': 1, 'Size': 0.075, 'CharacterSpacing': 1,
-    'LineSpacing': 1, 'Red1': 0.97, 'Green1': 0.98, 'Blue1': 1,
+    'zh': dict(Lyrics='歌词（用 | 分词）', Timings='分词时间（开始-结束秒，可留空）', Duration='自动唱完秒数',
+        Offset='整体延后秒数', FPS='帧率（0 跟随合成）', SegmentStart='分段起始字符（从 1 开始）',
+        SegmentEnd='分段结束字符（包含此字）', SetSegment='按字符范围添加分段', SegmentStatus='分段操作结果',
+        Status='时间／容量检查', ResetDefaults='恢复默认效果（保留歌词和时间）',
+        Font='字体', Style='字重', Size='字号', Center='位置', CharacterSpacing='字距', LineSpacing='行距',
+        Red1='文字颜色', Green1='文字颜色', Blue1='文字颜色', OverallOpacity='总透明度',
+        FadeWidth='亮暗前沿宽度（em）', IdleOpacity='未唱透明度', ActiveOpacity='已唱透明度',
+        FloatHeight='常规上浮高度（em）', FloatDuration='最短上浮时长（秒）', Emphasis='长音强调倍率',
+        EmphasisDuration='长音强调门槛（秒）', Glow='强调光晕倍率', LastWordBoost='加强句尾长音',
+        BackgroundVocal='背景人声（上浮加倍）'),
+    'en': dict(Lyrics='Lyrics (separate words with |)', Timings='Word times (start-end seconds, optional)',
+        Duration='Auto duration (seconds)', Offset='Global delay (seconds)', FPS='FPS (0 follows composition)',
+        SegmentStart='First character (1-based)', SegmentEnd='Last character (inclusive)',
+        SetSegment='Add segment boundaries', SegmentStatus='Segment action result', Status='Timing / capacity status',
+        ResetDefaults='Restore default effect (keep lyrics and timing)', Font='Font', Style='Weight', Size='Size',
+        Center='Position', CharacterSpacing='Tracking', LineSpacing='Line spacing', Red1='Text color',
+        Green1='Text color', Blue1='Text color', OverallOpacity='Overall opacity', FadeWidth='Reveal edge width (em)',
+        IdleOpacity='Unplayed opacity', ActiveOpacity='Played opacity', FloatHeight='Normal lift (em)',
+        FloatDuration='Minimum float duration (seconds)', Emphasis='Sustained-word emphasis multiplier',
+        EmphasisDuration='Emphasis threshold (seconds)', Glow='Emphasis glow multiplier',
+        LastWordBoost='Boost final sustained word', BackgroundVocal='Background vocal (double lift)'),
 }
 
 
-def quote(value): return json.dumps(value, ensure_ascii=False)
+def quote(value):
+    return json.dumps(value, ensure_ascii=False)
+
+
 def literal(value):
     if isinstance(value, str): return quote(value)
-    return str(value).lower() if isinstance(value, bool) else str(value)
+    if isinstance(value, bool): return str(value).lower()
+    if isinstance(value, (list, tuple)): return '{' + ', '.join(map(literal, value)) + '}'
+    return str(value)
+
 
 def inp(value=None, expression=None, source=None, output='Output'):
     if source: return f'Input {{ SourceOp = "{source}", Source = "{output}", }}'
     parts = []
-    if value is not None: parts.append(f'Value = {literal(value)}')
-    if expression is not None: parts.append(f'Expression = {quote(expression)}')
+    if value is not None: parts.append('Value = ' + literal(value))
+    if expression is not None: parts.append('Expression = ' + quote(expression))
     return 'Input { ' + ', '.join(parts) + ', }'
 
-def expression(result): return ':local MAX_CHARACTERS = ' + str(MAX_CHARACTERS) + '\n' + RUNTIME + '\nreturn ' + result
 
-def user_control(label, kind='Number', default=0, minimum=0, maximum=1, readonly=False, button_script=None):
-    values = {'LINKS_Name': label, 'LINKID_DataType': kind, 'ICS_ControlPage': 'Controls', 'INP_External': True}
+def expression(result):
+    return f':local MAX_CHARACTERS={MAX_CHARACTERS}; local SLOT_COUNT={SLOT_COUNT}\n' + RUNTIME + '\nreturn ' + result
+
+
+def state_field(row, column):
+    # Evaluate timing once (Controller.State), not separately for every glyph property.
+    prefix = '[^;]*;' * row
+    return (':local s=Controller.State; if type(s)~="string" then s=s.Value end; '
+            f'local r=s:match("^{prefix}([^;]*)"); '
+            f'return tonumber(r and r:match("^{"[^,]*," * (column-1)}([^,]*)")) or 0')
+
+
+def user_control(label, kind='Number', default=0, minimum=0, maximum=1, readonly=False,
+                 button_script=None, integer=False, page='Controls', checkbox=False):
+    values = dict(LINKS_Name=label, LINKID_DataType=kind, ICS_ControlPage=page, INP_External=True)
     if button_script is not None:
         values.update(INPID_InputControl='ButtonControl', BTNCS_Execute=button_script)
     elif kind == 'Text':
-        values.update(INPID_InputControl='TextEditControl', TEC_Lines=2 if not readonly else 1, TEC_Wrap=True, TEC_ReadOnly=readonly)
+        values.update(INPID_InputControl='TextEditControl', TEC_Lines=1 if readonly else 3,
+                      TEC_Wrap=True, TEC_ReadOnly=readonly)
     else:
-        values.update(INPID_InputControl='SliderControl', INP_Default=default, INP_MinScale=minimum,
-                      INP_MaxScale=maximum, INP_MinAllowed=minimum, INP_MaxAllowed=maximum, INP_Integer=False)
+        values.update(INPID_InputControl='CheckboxControl' if checkbox else 'SliderControl',
+                      INP_Default=default, INP_MinScale=minimum, INP_MaxScale=maximum,
+                      INP_MinAllowed=minimum, INP_MaxAllowed=maximum, INP_Integer=integer)
     return '{ ' + ', '.join(k + ' = ' + literal(v) for k, v in values.items()) + ', }'
 
-def node(name, node_type, inputs, controls=None, x=0, y=0):
-    body = ',\n'.join('            ' + key + ' = ' + value for key, value in inputs.items())
-    result = f'''        {name} = {node_type} {{
-          Inputs = {{
-{body},
-          }},
-          ViewInfo = OperatorInfo {{ Pos = {{ {x}, {y} }} }},
-'''
+
+def node(name, kind, inputs, controls=None, x=0, y=0):
+    result = f'        {name} = {kind} {{\n          Inputs = {{\n'
+    result += ',\n'.join('            ' + k + ' = ' + v for k, v in inputs.items()) + ',\n          },\n'
     if controls:
         result += '          UserControls = ordered() {\n' + ',\n'.join('            ' + k + ' = ' + v for k, v in controls.items()) + ',\n          },\n'
-    return result + '        }'
+    return result + f'          ViewInfo = OperatorInfo {{ Pos = {{ {x}, {y} }} }},\n        }}'
 
-def reset_script(keys):
-    return '; '.join(f'tool:SetInput({quote(key)}, {literal(DEFAULTS[key])})' for key in keys)
+
+def reset_script(keys=None, font='Microsoft YaHei UI', style='Bold'):
+    keys = keys or [k for k in DEFAULTS if k not in ('Duration', 'Offset', 'FPS', 'SegmentStart', 'SegmentEnd')]
+    values = {k: DEFAULTS[k] for k in keys}
+    values.update(Font=font, Style=style, Center=[.5, .54])
+    # Buttons live on the public macro, so `tool` is the same object users edit.
+    statements = ['local c=comp; if c then c:StartUndo("Restore lyric appearance") end']
+    for key, value in values.items():
+        statements.append(f'local input=tool[{quote(key)}]; if input then input:SetExpression(nil); input:ConnectTo(nil) end; tool:SetInput({quote(key)}, {literal(value)})')
+    statements.append('if c then c:EndUndo(true) end')
+    return '\n'.join(statements)
+
+
+def set_segment_script():
+    return (ROOT / 'src/segment.lua').read_text('utf-8-sig')
+
 
 def build(locale='zh', lyrics='我|想要|留住|这一刻', timings='', font=None, style='Bold'):
     labels = LABELS[locale]
     font = font or ('Microsoft YaHei UI' if locale == 'zh' else 'Arial')
-    params = [
-        ('Lyrics', labels['lyrics'], 'Text', lyrics, 0, 1), ('Timings', labels['timings'], 'Text', timings, 0, 1),
-        ('Duration', labels['duration'], 'Number', DEFAULTS['Duration'], 0.01, 120),
-        ('Offset', labels['offset'], 'Number', DEFAULTS['Offset'], -120, 120),
-        ('Softness', labels['softness'], 'Number', DEFAULTS['Softness'], 0.05, 1),
-        ('FPS', labels['fps'], 'Number', DEFAULTS['FPS'], 0, 240),
-        ('FadeWidth', labels['fade'], 'Number', DEFAULTS['FadeWidth'], 0.001, 0.25),
-        ('BounceAmount', labels['bounce'], 'Number', DEFAULTS['BounceAmount'], 0, 0.12),
-        ('BounceHeight', labels['bounce_height'], 'Number', DEFAULTS['BounceHeight'], 0, 0.05),
-        ('IdleOpacity', labels['idle_opacity'], 'Number', DEFAULTS['IdleOpacity'], 0, 1),
-        ('ActiveOpacity', labels['active_opacity'], 'Number', DEFAULTS['ActiveOpacity'], 0, 1),
-        ('IdleBrightness', labels['idle_brightness'], 'Number', DEFAULTS['IdleBrightness'], 0, 1),
-        ('IdleBlur', labels['idle_blur'], 'Number', DEFAULTS['IdleBlur'], 0, 10),
-        ('ActiveBlur', labels['active_blur'], 'Number', DEFAULTS['ActiveBlur'], 0, 10),
-        ('GlowGain', labels['glow_gain'], 'Number', DEFAULTS['GlowGain'], 0, 4),
-        ('GlowSize', labels['glow_size'], 'Number', DEFAULTS['GlowSize'], 0, 20),
-        ('OverallOpacity', labels['overall'], 'Number', DEFAULTS['OverallOpacity'], 0, 1),
-    ]
-    controls = {key: user_control(label, kind, default, lo, hi) for key, label, kind, default, lo, hi in params}
-    controls.update({
-        'Status': user_control(labels['status'], 'Text', readonly=True),
-        'Count': user_control('Internal character count', maximum=100000),
-        'Sweep': user_control('Internal sweep', maximum=1), 'Pulse': user_control('Internal pulse', maximum=1),
-        'MaskWidth': user_control('Internal mask width', maximum=2), 'MaskCenterX': user_control('Internal mask center', minimum=-1, maximum=2),
-        'MaskSoft': user_control('Internal mask softness', maximum=1),
-        'ResetMotion': user_control(labels['reset_motion'], button_script=reset_script(['Softness','FadeWidth','BounceAmount','BounceHeight','GlowGain','GlowSize'])),
-        'ResetLook': user_control(labels['reset_look'], button_script=reset_script(['IdleOpacity','ActiveOpacity','IdleBrightness','IdleBlur','ActiveBlur','OverallOpacity','Size','CharacterSpacing','LineSpacing','Red1','Green1','Blue1'])),
-    })
-    ctrl = {key: inp(default) for key, _, _, default, _, _ in params}
-    ctrl.update({'Status': inp(expression=expression('status')), 'Count': inp(expression=expression('count')),
-                 'Sweep': inp(expression=expression('sweep')), 'Pulse': inp(expression=expression('pulse')),
-                 'MaskWidth': inp(expression=expression('maskWidth')), 'MaskCenterX': inp(expression=expression('maskCenterX')),
-                 'MaskSoft': inp(expression=expression('maskSoft')), 'StyledText': inp(expression=expression('clean')),
-                 'Font': inp(font), 'Style': inp(style), 'Size': inp(DEFAULTS['Size']), 'Center': 'Input { Value = { 0.5, 0.54 }, }',
-                 'CharacterSpacing': inp(DEFAULTS['CharacterSpacing']), 'LineSpacing': inp(DEFAULTS['LineSpacing']),
-                 'Red1': inp(DEFAULTS['Red1']), 'Green1': inp(DEFAULTS['Green1']), 'Blue1': inp(DEFAULTS['Blue1']),
-                 'Opacity1': inp(0), 'UseFrameFormatSettings': inp(1), 'Width': inp(1920), 'Height': inp(1080)})
-    common = {'StyledText': inp(expression='Controller.StyledText'), 'UseFrameFormatSettings': inp(1),
-              'Width': inp(1920), 'Height': inp(1080), 'Font': inp(expression='Controller.Font'),
-              'Style': inp(expression='Controller.Style'), 'Size': inp(expression='Controller.Size*(1+Controller.BounceAmount*Controller.Pulse)'),
-              'Center': inp(expression='Point(Controller.Center.X, Controller.Center.Y-Controller.BounceHeight*Controller.Pulse)'),
-              'CharacterSpacing': inp(expression='Controller.CharacterSpacing'), 'LineSpacing': inp(expression='Controller.LineSpacing'),
-              'HorizontalJustificationNew': inp(3), 'VerticalJustificationNew': inp(3)}
-    base = dict(common)
-    base.update({'Red1': inp(expression='Controller.Red1*Controller.IdleBrightness'), 'Green1': inp(expression='Controller.Green1*Controller.IdleBrightness'),
-                 'Blue1': inp(expression='Controller.Blue1*Controller.IdleBrightness'), 'Opacity1': inp(expression='Controller.OverallOpacity*Controller.IdleOpacity')})
-    active = dict(common)
-    active.update({'Red1': inp(expression='Controller.Red1'), 'Green1': inp(expression='Controller.Green1'), 'Blue1': inp(expression='Controller.Blue1'),
-                   'Opacity1': inp(expression='Controller.OverallOpacity*Controller.ActiveOpacity'), 'EffectMask': inp(source='KaraokeMask', output='Mask')})
-    nodes = [node('Controller','TextPlus',ctrl,controls,-330,0), node('BaseText','TextPlus',base,x=-180,y=-70),
-             node('BaseBlur','Blur',{'Input':inp(source='BaseText'),'XBlurSize':inp(expression='Controller.IdleBlur'),'LockXY':inp(1)},x=-20,y=-70),
-             node('KaraokeMask','RectangleMask',{'Width':inp(expression='Controller.MaskWidth'),'Height':inp(1),
-                  'Center':inp(expression='Point(Controller.MaskCenterX, 0.5)'),'SoftEdge':inp(expression='Controller.MaskSoft')},x=-180,y=80),
-             node('ActiveText','TextPlus',active,x=-20,y=80),
-             node('ActiveBlur','Blur',{'Input':inp(source='ActiveText'),'XBlurSize':inp(expression='Controller.ActiveBlur'),'LockXY':inp(1)},x=130,y=80),
-             node('HighlightGlow','SoftGlow',{'Input':inp(source='ActiveBlur'),'Gain':inp(expression='Controller.GlowGain*(0.85+0.15*Controller.Pulse)'),
-                  'XGlowSize':inp(expression='Controller.GlowSize'),'YGlowSize':inp(expression='Controller.GlowSize'),'Blend':inp(1)},x=280,y=80),
-             node('FinalMerge','Merge',{'Background':inp(source='BaseBlur'),'Foreground':inp(source='HighlightGlow'),
-                  'Blend':inp(1),'PerformDepthMerge':inp(0)},x=440,y=0)]
-    exposed = []
-    controls_page = [key for key, *_ in params[:9]] + ['ResetMotion']
-    for key in controls_page:
-        label = next((x[1] for x in params if x[0] == key), labels['reset_motion'])
-        exposed.append(f'        {key} = InstanceInput {{ SourceOp = "Controller", Source = "{key}", Name = {quote(label)}, Page = "Controls", }}')
-    exposed.append('        Status = InstanceInput { SourceOp = "Controller", Source = "Status", Page = "Controls", }')
-    style_items = [('Font',labels['font'],1),('Style',labels['style'],1),('Size',labels['size'],None),('Center',labels['position'],None),
-                   ('CharacterSpacing',labels['tracking'],None),('LineSpacing',labels['line_spacing'],None),
-                   ('Red1',labels['color'],2),('Green1',labels['color'],2),('Blue1',labels['color'],2)]
-    for key in [x[0] for x in params[9:]]:
-        style_items.append((key,next(x[1] for x in params if x[0]==key),None))
-    style_items.append(('ResetLook',labels['reset_look'],None))
-    for key,label,group in style_items:
-        grouping = f' ControlGroup = {group},' if group else ''
-        exposed.append(f'        {key} = InstanceInput {{ SourceOp = "Controller", Source = "{key}", Name = {quote(label)}, Page = "Style",{grouping} }}')
-    return '''{
-  Tools = ordered() {
-    AMLLyrics = MacroOperator {
-      Inputs = ordered() {
-''' + ',\n'.join(exposed) + '''
-      },
-      Outputs = { MainOutput1 = InstanceOutput { SourceOp = "FinalMerge", Source = "Output", } },
-      ViewInfo = GroupInfo { Pos = { 0, 0 } },
-      Tools = ordered() {
-''' + ',\n'.join(nodes) + '''
-      },
-    },
-  },
-  ActiveTool = "AMLLyrics",
-}
-'''
+    control_keys = ['Lyrics', 'Timings', 'Duration', 'Offset', 'FPS', 'SegmentStart', 'SegmentEnd', 'SegmentStatus', 'Status']
+    motion_keys = ['FadeWidth','IdleOpacity','ActiveOpacity','FloatHeight','FloatDuration','Emphasis','EmphasisDuration','Glow','LastWordBoost','BackgroundVocal']
+    style_keys = ['Font','Style','Size','Center','CharacterSpacing','LineSpacing','Red1','Green1','Blue1','OverallOpacity']
+    limits = dict(Duration=(.01,120), Offset=(-120,120), FPS=(0,240), SegmentStart=(1,256), SegmentEnd=(1,256),
+                  FadeWidth=(.02,1), FloatHeight=(0,.15), FloatDuration=(.1,3), Emphasis=(0,2),
+                  EmphasisDuration=(.5,4), Glow=(0,2))
+    controls, ctrl = {}, {}
+    for key in control_keys + motion_keys + ['OverallOpacity']:
+        if key in ('Lyrics','Timings','SegmentStatus','Status'):
+            value = lyrics if key == 'Lyrics' else timings if key == 'Timings' else ''
+            ctrl[key] = inp(value)
+            controls[key] = user_control(labels[key], 'Text', readonly=key in ('SegmentStatus','Status'))
+        else:
+            lo,hi = limits.get(key,(0,1))
+            ctrl[key] = inp(DEFAULTS[key])
+            controls[key] = user_control(labels[key],default=DEFAULTS[key],minimum=lo,maximum=hi,
+                integer=key.startswith('Segment'),checkbox=key in ('LastWordBoost','BackgroundVocal'),
+                page='Motion' if key in motion_keys else 'Controls')
+    controls['State'] = user_control('Internal timeline state', 'Text', readonly=True, page='Internal')
+    ctrl['State'] = inp(expression=expression('state'))
+    controls['FrameAspect'] = user_control('Internal frame aspect',maximum=10,page='Internal')
+    ctrl['FrameAspect'] = inp(expression='comp:GetPrefs("Comp.FrameFormat.Width")/max(1,comp:GetPrefs("Comp.FrameFormat.Height"))')
+    ctrl['Status'] = inp(expression=':local s=Controller.State; if type(s)~="string" then s=s.Value end; return s:match("([^;]*)$")')
+    for key,col in [('Prefix',1),('Last',2),('Count',3)]:
+        controls[key]=user_control(key,maximum=256,page='Internal');ctrl[key]=inp(expression=state_field(0,col))
+    for slot in range(1,SLOT_COUNT+1):
+        for col,field in enumerate(('Index','End','WordFirst','WordLast','Progress','Lift','Scale','Shift','Glow','Radius'),1):
+            key=f'S{slot:02}{field}'
+            controls[key]=user_control(key,minimum=-256,maximum=256,page='Internal')
+            ctrl[key]=inp(expression=state_field(slot,col))
+    ctrl.update(StyledText=inp(expression=':local s=Controller.Lyrics; if type(s)~="string" then s=s.Value end; return s:gsub("|", ""):gsub("\\r\\n", "\\n"):gsub("\\r", "\\n")'),
+        Font=inp(font), Style=inp(style), Center=inp([.5,.54]), Size=inp(DEFAULTS['Size']),
+        CharacterSpacing=inp(1), LineSpacing=inp(1), Red1=inp(1), Green1=inp(1), Blue1=inp(1),
+        Opacity1=inp(0),UseFrameFormatSettings=inp(1),Width=inp(1920),Height=inp(1080))
+    common = dict(StyledText=inp(expression='Controller.StyledText'),Font=inp(expression='Controller.Font'),
+        Style=inp(expression='Controller.Style'),Size=inp(expression='Controller.Size'),Center=inp(expression='Controller.Center'),
+        CharacterSpacing=inp(expression='Controller.CharacterSpacing'),LineSpacing=inp(expression='Controller.LineSpacing'),
+        Red1=inp(expression='Controller.Red1'),Green1=inp(expression='Controller.Green1'),Blue1=inp(expression='Controller.Blue1'),
+        UseFrameFormatSettings=inp(1),Width=inp(1920),Height=inp(1080),HorizontalJustificationNew=inp(3),VerticalJustificationNew=inp(3))
+    prefix = dict(common,Start=inp(0),End=inp(expression='Controller.Prefix/max(1,Controller.Count)'),
+        Opacity1=inp(expression='iif(Controller.Prefix>0,Controller.ActiveOpacity*Controller.OverallOpacity,0)'),
+        Center=inp(expression='Point(Controller.Center.X,Controller.Center.Y+Controller.FloatHeight*Controller.Size*Controller.FrameAspect*iif(Controller.BackgroundVocal>.5,2,1))'))
+    future = dict(common,Start=inp(expression='Controller.Last/max(1,Controller.Count)'),End=inp(1),
+        Opacity1=inp(expression='iif(Controller.Last<Controller.Count,Controller.IdleOpacity*Controller.OverallOpacity,0)'))
+    nodes=[node('Controller','TextPlus',ctrl,controls),node('SettledText','TextPlus',prefix,x=200,y=-80),node('FutureText','TextPlus',future,x=200,y=-160),
+           node('StaticMerge','Merge',dict(Background=inp(source='FutureText'),Foreground=inp(source='SettledText'),PerformDepthMerge=inp(0)),x=400,y=-80)]
+    previous='StaticMerge'
+    for slot in range(1,SLOT_COUNT+1):
+        key=f'S{slot:02}'; glyph=f'Glyph{slot:02}'; shade=f'Reveal{slot:02}'; move=f'Motion{slot:02}'; glow=f'Glow{slot:02}'; merge=f'Merge{slot:02}'
+        idx=f'Controller.{key}Index'
+        inputs=dict(common,StyledText=inp(expression=f'iif({idx}>0,Controller.StyledText,"")'),
+                    Start=inp(expression=f'max(0,{idx}-1)/max(1,Controller.Count)'),End=inp(expression=f'Controller.{key}End/max(1,Controller.Count)'),Opacity1=inp(1))
+        nodes.append(node(glyph,'TextPlus',inputs,x=200,y=slot*80))
+        word=f'WordBounds{slot:02}'
+        measurement=dict(inputs,Start=inp(expression=f'max(0,Controller.{key}WordFirst-1)/max(1,Controller.Count)'),
+                         End=inp(expression=f'Controller.{key}WordLast/max(1,Controller.Count)'))
+        nodes.append(node(word,'TextPlus',measurement,x=100,y=slot*80))
+        def bound(index, axis='Width'):
+            return f':local d={word}.Output.DataWindow; if not d or d[1]<-10000 then return 0 end; return d[{index}]/{word}.Output.{axis}'
+        reveal=dict(Image1=inp(source=glyph),NumberIn1=inp(expression=f'Controller.{key}Progress'),
+                    NumberIn2=inp(expression=bound(1)),NumberIn3=inp(expression=bound(3)),
+                    NumberIn4=inp(expression='max(.000001,Controller.FadeWidth*Controller.Size)'),
+                    NumberIn5=inp(expression='Controller.IdleOpacity'),NumberIn6=inp(expression='Controller.ActiveOpacity'),
+                    NumberIn7=inp(expression='Controller.OverallOpacity'),
+                    Intermediate1=inp('n5+(n6-n5)*min(1,max(0,(n2+n1*(max(0,n3-n2)+n4)-x)/n4))'))
+        for channel,source in [('RedExpression','r1'),('GreenExpression','g1'),('BlueExpression','b1'),('AlphaExpression','a1')]:
+            reveal[channel]=inp(f'{source}*i1*n7')
+        nodes.append(node(shade,'Custom',reveal,x=400,y=slot*80))
+        pivot=f':local d={glyph}.Output.DataWindow; if not d or d[1]<-10000 then return Point(.5,.5) end; return Point((d[1]+d[3])/2/{glyph}.Output.Width,(d[2]+d[4])/2/{glyph}.Output.Height)'
+        nodes.append(node(move,'Transform',dict(Input=inp(source=shade),Pivot=inp(expression=pivot),Size=inp(expression=f'Controller.{key}Scale'),
+            Center=inp(expression=f'Point(.5+Controller.{key}Shift*Controller.Size,.5+Controller.{key}Lift*Controller.Size*Controller.FrameAspect)'),Edges=inp(0)),x=600,y=slot*80))
+        nodes.append(node(glow,'SoftGlow',dict(Input=inp(source=move),Gain=inp(expression=f'Controller.{key}Glow'),
+            XGlowSize=inp(expression=f'Controller.{key}Radius*Controller.Size*100'),YGlowSize=inp(expression=f'Controller.{key}Radius*Controller.Size*100'),
+            Blend=inp(expression=f'iif(Controller.{key}Glow>0,1,0)')),x=800,y=slot*80))
+        nodes.append(node(merge,'Merge',dict(Background=inp(source=previous),Foreground=inp(source=glow),
+            Blend=inp(expression=f'iif({idx}>0,1,0)'),PerformDepthMerge=inp(0)),x=1000,y=slot*80));previous=merge
+    exposed=[]
+    for keys,page in [(control_keys,'Controls'),(style_keys,'Style'),(motion_keys,'Motion')]:
+        for key in keys:
+            group=' ControlGroup = 1,' if key in ('Font','Style') else ' ControlGroup = 2,' if key in ('Red1','Green1','Blue1') else ''
+            exposed.append(f'        {key} = InstanceInput {{ SourceOp = "Controller", Source = "{key}", Name = {quote(labels[key])}, Page = "{page}",{group} }}')
+    buttons=dict(SetSegment=user_control(labels['SetSegment'],button_script=set_segment_script()),
+                 ResetDefaults=user_control(labels['ResetDefaults'],button_script=reset_script(font=font,style=style)))
+    for key in buttons: exposed.append(f'        {key} = {inp(0)}')
+    return '{\n  Tools = ordered() {\n    AMLLyrics = MacroOperator {\n      Inputs = ordered() {\n'+',\n'.join(exposed)+'\n      },\n'+f'      Outputs = {{ MainOutput1 = InstanceOutput {{ SourceOp = "{previous}", Source = "Output", }} }},\n'+ '      UserControls = ordered() {\n'+',\n'.join('        '+k+' = '+v for k,v in buttons.items())+'\n      },\n      ViewInfo = GroupInfo { Pos = { 0, 0 } },\n      Tools = ordered() {\n'+',\n'.join(nodes)+'\n      },\n    },\n  },\n  ActiveTool = "AMLLyrics",\n}\n'
+
 
 def write_zip(path, entries):
     with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for name, data in sorted(entries.items()):
-            info = zipfile.ZipInfo(name, date_time=(2026,1,1,0,0,0)); info.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(info, data)
+        for name,data in sorted(entries.items()):
+            info=zipfile.ZipInfo(name,date_time=(2026,1,1,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED;archive.writestr(info,data)
+
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,default=ROOT/'dist');args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,default=ROOT/'dist');args=parser.parse_args()
+    args.output.mkdir(parents=True,exist_ok=True)
     for locale,label in [('zh','ZH'),('en','EN')]:
-        data=build(locale).encode('utf-8'); folder=args.output/locale;folder.mkdir(parents=True,exist_ok=True)
+        data=build(locale).encode('utf-8');folder=args.output/locale;folder.mkdir(parents=True,exist_ok=True)
         (folder/'AM Lyrics.setting').write_bytes(data)
-        write_zip(args.output/f'AM-Lyrics-{label}.drfx', {'Edit/Titles/AM Lyrics/AM Lyrics.setting':data})
-    print(f'Built localized lightweight AM Lyrics titles in {args.output}')
+        write_zip(args.output/f'AM-Lyrics-{label}.drfx',{'Edit/Titles/AM Lyrics/AM Lyrics.setting':data})
+    print(f'Built localized titles in {args.output}')
+
 if __name__=='__main__': main()

@@ -29,8 +29,8 @@
 
 ## Blackmagic Design
 
-仅参考用户本机 Resolve Developer 的 Workflow Integrations 示例及 API 文档。
-安装脚本在用户本机复制 WorkflowIntegration.node，不在本项目分发该专有二进制。
+仅参考用户本机 Resolve Developer 的 Scripting API 文档，以及 Electron 的安全模型文档。
+普通脚本宿主通过 Resolve 官方 Python Scripting API 与本地 Electron 界面通信，不分发 WorkflowIntegration.node。
 本项目不是 Blackmagic Design、Apple、网易云或 QQ 的官方产品。
 
 ## amll-dev/applemusic-like-lyrics（视觉行为参考）
@@ -39,4 +39,6 @@
 固定参考提交：2ca8e58051d1df306cbbd6bd8e66cb0293565b1b
 许可：上游仓库声明 AGPL-3.0，完整许可证见上游 `LICENSE`。
 
-本项目没有复制上游 TypeScript、CSS 或动画代码。当前 Fusion 模板仅参考其公开视觉行为：逐词渐变遮罩、轻微上浮、字符强调缩放与辉光，并用独立的 Resolve 原生 Text+、RectangleMask、Blur、SoftGlow、Merge 节点重新实现。
+本项目没有复制上游 TypeScript、CSS 或动画代码。当前 Fusion 模板仅参考其公开视觉行为：逐词渐变遮罩、轻微上浮、字符强调缩放与辉光，并用独立的 Resolve 原生 Text+、Custom、Transform、SoftGlow、Merge 节点重新实现。
+
+0.5.0 单行参数映射及与上游的差异详见仓库 `docs/amll-motion-research.md`；没有将上游 TypeScript/CSS 渲染器纳入分发。

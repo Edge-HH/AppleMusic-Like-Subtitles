@@ -3,7 +3,7 @@
 ## 本地入口
 
 - `Build-Title-Preset.ps1`：生成 `dist/zh/AM Lyrics.setting`、`dist/en/AM Lyrics.setting`、中文 DRFX 和英文 DRFX。
-- `Build-Plugin-Package.ps1`：测试并生成版本化 Workflow Integration ZIP。
+- `Build-Plugin-Package.ps1`：测试并生成版本化 Resolve Scripts ZIP。
 - `Build-Release-Packages.ps1`：组合完整 Release 资产，包括两个语言标题包与 Windows 一键安装包。
 
 ## CI
@@ -18,7 +18,7 @@
    - `AM-Lyrics-Title-ZH-v*.zip`
    - `AM-Lyrics-Title-EN-v*.zip`
    - `AM-Lyrics-Windows-Installer-v*.zip`
-   - `AMLL-Resolve-Workflow-v*.zip`
+   - `AMLL-Resolve-Script-v*.zip`
    - 对应 SHA-256 文件。
 4. 创建或更新同名 GitHub Release 并上传上述资产。
 

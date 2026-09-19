@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BlackmagicDesign>
+  <Plugin>
+    <Id>com.edgehh.amll.lyrics</Id>
+    <Name>AMLL 歌词助手</Name>
+    <Version>0.4.0</Version>
+    <Description>搜索、选择和导入逐字歌词</Description>
+    <FilePath>main.js</FilePath>
+  </Plugin>
+</BlackmagicDesign>
