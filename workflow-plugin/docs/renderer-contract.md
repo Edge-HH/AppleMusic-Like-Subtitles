@@ -1,81 +1,79 @@
-# 歌词样式渲染对接协议 v1
+# 歌词时间线渲染协议 v2
 
-## 范围与接入点
+## 接入边界
 
-此插件负责歌词来源、选择、解析、时间线定位；另一模块负责 Fusion 样式和实际剪辑创建。
-唯一代码接入点是 `workflow-plugin/adapters/renderer.js`，当前为不可用占位实现。
-不要将渲染实现置于前端，不向 renderer process 暴露通用 `require`、文件系统或任意 Resolve API。
+插件主进程负责歌词选择、范围裁剪、时间线定位与安全校验；`adapters/renderer.js` 是唯一 Resolve 写入适配层。前端只能通过白名单 IPC 调用，不暴露通用 `require`、文件系统或任意 Resolve API。
+
+适配层提供：
 
 ```js
-module.exports = {
-  available: true,
-  reason: '',
-  async render({ job, resolve, project, timeline, info }) {
-    // 由完成后的样式模块实现：验证模板、创建新视频轨道、写入歌词。
-    // 全部成功后才返回；出现部分写入应抛出明确异常并报告已创建内容。
-    return { insertedCount: 1, message: '已创建歌词剪辑' };
-  },
-};
-```
-
-以上只描述接口，不能直接替换占位文件来假报成功。
-
-## job 数据
-
-- `schemaVersion: 1`
-- `kind: "amll.resolve.render-job"`
-- `document`: 歌词原始时间、文本和来源。
-- `placement.startFrame`: Resolve 时间线绝对帧号，不是相对时间线起点的帧数。
-- `placement.offsetMs`: UI 偏移；正值延后。不得再次应用 LRC 文件 offset。
-- `placement.frameRate`: `{ numerator, denominator }`，例如 30000/1001。
-- `placement.timelineId / timelineName`: 生成时的目标时间线。
-- `placement.videoTrackPolicy: "new-track"`: 不覆盖用户已有轨道和剪辑。
-- `placement.lineFrames[i]`: 对应 `document.lines[i]` 的 `{ startFrame, endFrameExclusive }`，结束帧排他。
-
-**逐字时间仍为歌曲起点相对的毫秒。** 对齐公式：
-
-```text
-absoluteWordFrame = placement.startFrame
-                  + round((word.startMs + placement.offsetMs) * fps / 1000)
-```
-
-如果 Fusion comp 使用相对剪辑帧号，应再减去该剪辑的绝对起点。
-不要按字符串逐字分配平均时间。SRT/普通 LRC 应按逐行动画降级，并在接入 UI 中明确说明。
-
-## document 数据
-
-```json
 {
-  "schemaVersion": 1,
-  "source": { "provider": "amll", "format": "ttml", "title": "示例", "authors": ["author"], "id": "原文件名" },
-  "metadata": { "musicName": ["示例"] },
-  "timing": "word",
-  "durationMs": 2000,
-  "warnings": [],
-  "lines": [{
-    "startMs": 1000,
-    "endMs": 2000,
-    "text": "你好",
-    "words": [{ "startMs": 1000, "endMs": 1500, "text": "你" }, { "startMs": 1500, "endMs": 2000, "text": "好" }],
-    "translations": [{ "language": "en", "text": "Hello" }],
-    "romanization": [],
-    "agent": "v1",
-    "role": "main"
-  }]
+  available: true,
+  async listTitles({ project }) {},
+  async render({ job, project, timeline }) {}
 }
 ```
 
-`role` 可以为 `main` 或 `background`，和声作为独立行，允许与主唱时间重叠。
-`timing` 可以为 `line` / `word` / `mixed`。每条 `words` 数组可能为空。
-文本可能包含换行、引号、反斜线、Emoji 和中日韩字符，写入 Lua/Fusion 时必须正确序列化，不能直接拼进代码执行。
-歌词作者、平台来源和文件 ID 必须保留，不能把第三方歌词归为本插件原创。
+`listTitles` 返回内置 AM Lyrics 预设和媒体池中可选的 Fusion 项目。`render` 必须在全部验证和写入完成后返回正整数 `insertedCount`；部分失败需尽力回滚并明确说明残留位置。
 
-## 接入验收清单
+## job v2
 
-1. 先检查模板存在、版本、支持的字数／词数上限；超限分段或明确拒绝，禁止静默截断。
-2. 确认当前时间线与 job 的目标相同，并使用真实帧率（含 23.976/29.97/59.94）。
-3. 创建专用新视频轨道，保留所有已有剪辑，不改工程设置。
-4. 对多歌手、翻译、和声、逐行降级给出明确策略。
-5. 确认新增片段数量和写入成功后再返回 insertedCount。
-6. 部分失败时有回滚策略或具体残留说明，避免用户重试叠加重复剪辑。
-7. 在 Studio 19、19.0.2+ 及后续主版本实机验证后，才扩大已验证兼容范围。
+- `schemaVersion: 2`
+- `kind: "amll.resolve.render-job"`
+- `document`: 已裁剪到用户选择范围的歌词文档，第一行起点被重新归零；原始范围记录在 `document.source.range`。
+- `render.placementMode`: `scattered` 或 `fusion-clip`。
+- `render.titleSource`: `am-default` 或 `media:<MediaPoolItem unique id>`。
+- `placement.startFrame`: Resolve 时间线绝对帧号。
+- `placement.offsetMs`: UI 偏移，正值延后；不得再次应用歌词文件自身 offset。
+- `placement.frameRate`: `{ numerator, denominator }`。
+- `placement.timelineId / timelineName`: 生成任务时的目标时间线。
+- `placement.videoTrackPolicy: "new-top-track"`。
+- `placement.lineFrames[i]`: 对应裁剪后 `document.lines[i]` 的 `{ startFrame, endFrameExclusive }`。
+
+范围对齐公式：
+
+```text
+rangedLineMs = originalLineMs - selectedFirstLine.startMs
+absoluteLineFrame = placement.startFrame
+                  + round((rangedLineMs + placement.offsetMs) * fps / 1000)
+```
+
+逐字时间也减去同一个范围起点，再在每句写入标题时减去该句起点，得到 Fusion 片段内相对秒数。不得按字符串平均分配时间。
+
+## AM Lyrics 写入
+
+- 使用单一 `AM Lyrics` 标题；单句超过 256 个 Unicode 码点时在时间线写入前报错。
+- `Lyrics` 使用真实 `words[].text` 以 `|` 连接。
+- `Timings` 使用 `word.startMs/endMs - line.startMs`，单位为秒。
+- `Offset=0`，因为时间线位置已经包含全局偏移。
+- `FPS` 写入真实时间线帧率。
+- 无逐字数据的行只写一个整行段和一个整行区间，不伪造逐字。
+
+## 媒体池 Fusion 标题
+
+扫描媒体池中 `GetClipProperty().Type` 包含 `Fusion` 的项目，并排除插件自己的 `AMLL 歌词生成` 文件夹。导入时复制到临时时间线，查找可写 Text+ `StyledText` 并写入整行歌词。此路径始终报告 `timing: "line"`。
+
+如果项目不能产生可编辑 Fusion comp，或没有可写 Text+，必须停止并返回明确错误；不能假报成功，也不能静默改用 AM Lyrics。
+
+## 时间线事务
+
+1. 核对当前时间线唯一 ID 与 job 一致。
+2. 在 `AMLL 歌词生成` 媒体池文件夹创建临时时间线。
+3. 为每句创建指定长度的标题实例，写入参数，再转换为独立 Fusion 源。
+4. 根据半开区间重叠关系分配轨道 lane；追加足够数量的顶部视频轨道。
+5. 使用 `MediaPool.AppendToTimeline` 的 `trackIndex`、`recordFrame`、`startFrame`、`endFrame` 精确写入。
+6. `fusion-clip` 模式调用 `Timeline.CreateFusionClip` 合并本次生成的项目，并删除空中间轨道。
+7. 删除临时时间线并恢复用户原媒体池文件夹。
+
+失败时尽力删除目标片段、空轨道、临时时间线和未完成媒体项。成功导入后的独立 Fusion 源必须保留在媒体池，否则时间线引用可能离线。
+
+## 验收清单
+
+1. 选择范围后第一行准确落在锚点加偏移位置。
+2. 23.976／29.97／59.94 使用有理帧率与正确丢帧时间码。
+3. 逐字来源保留真实 token 时间，逐行来源没有伪造 token。
+4. 现有轨道和剪辑不被覆盖或波纹移动。
+5. 重叠行使用额外顶部轨道；不重叠行复用轨道。
+6. 散落和单 Fusion 片段两种模式都核对片段数量、起止帧与长度。
+7. 自定义媒体池标题明确报告逐行降级和不兼容结构。
+8. Studio 19、19.0.2 与后续版本分别实机验证后再扩大兼容声明。

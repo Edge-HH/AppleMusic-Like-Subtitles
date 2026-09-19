@@ -24,8 +24,31 @@ function timecodeFrame(tc, rate) {
   }
   return frames;
 }
-function makeJob(document, settings, context) {
+function lineRange(document, settings = {}) {
   validateDocument(document);
+  const first = Number(settings.rangeStartLine ?? 1);
+  const last = Number(settings.rangeEndLine ?? document.lines.length);
+  if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || first < 1 || last < first || last > document.lines.length) {
+    throw new Error(`歌词范围无效，请选择 1–${document.lines.length} 行内的连续范围`);
+  }
+  const baseMs = document.lines[first - 1].startMs;
+  const lines = document.lines.slice(first - 1, last).map(item => ({
+    ...item,
+    startMs: item.startMs - baseMs,
+    endMs: item.endMs - baseMs,
+    words: item.words.map(word => ({ ...word, startMs: word.startMs - baseMs, endMs: word.endMs - baseMs })),
+  }));
+  const selected = {
+    ...document,
+    source: { ...document.source, range: { startLine: first, endLine: last, originalStartMs: baseMs } },
+    lines,
+    durationMs: Math.max(...lines.map(item => item.endMs)),
+  };
+  validateDocument(selected);
+  return selected;
+}
+function makeJob(document, settings, context) {
+  const rangedDocument = lineRange(document, settings);
   const offsetMs = Number(settings.offsetMs ?? 0);
   if (!Number.isFinite(offsetMs) || Math.abs(offsetMs) > 86400000) throw new Error('歌词偏移必须在正负 24 小时内');
   const rate = context.frameRate;
@@ -35,13 +58,23 @@ function makeJob(document, settings, context) {
   const startFrame = anchor === 'playhead' ? timecodeFrame(context.currentTimecode, rate) : anchor === 'timeline-start' ? context.startFrame : Number(settings.startFrame);
   if (!Number.isSafeInteger(startFrame) || startFrame < context.startFrame) throw new Error('插入起点不能早于时间线起点');
   const fps = rate.numerator / rate.denominator;
-  const frames = document.lines.map(item => ({
+  const frames = rangedDocument.lines.map(item => ({
     startFrame: startFrame + Math.round((item.startMs + offsetMs) * fps / 1000),
     endFrameExclusive: startFrame + Math.round((item.endMs + offsetMs) * fps / 1000),
   }));
   if (frames.some(item => item.startFrame < context.startFrame)) throw new Error('偏移后的歌词早于时间线起点，请增大偏移或后移插入点');
   for (const item of frames) item.endFrameExclusive = Math.max(item.startFrame + 1, item.endFrameExclusive);
-  return { schemaVersion: 1, kind: 'amll.resolve.render-job', document, placement: { startFrame, offsetMs, frameRate: rate, videoTrackPolicy: 'new-track', timelineName: context.name, timelineId: context.id, lineFrames: frames } };
+  const placementMode = settings.placementMode || 'scattered';
+  if (!['scattered', 'fusion-clip'].includes(placementMode)) throw new Error('无效的时间线放置方式');
+  const titleSource = String(settings.titleSource || 'am-default');
+  if (!/^am-(?:default|auto|32|64)$/.test(titleSource) && !titleSource.startsWith('media:')) throw new Error('无效的 Fusion 标题来源');
+  return {
+    schemaVersion: 2,
+    kind: 'amll.resolve.render-job',
+    document: rangedDocument,
+    render: { placementMode, titleSource },
+    placement: { startFrame, offsetMs, frameRate: rate, videoTrackPolicy: 'new-top-track', timelineName: context.name, timelineId: context.id, lineFrames: frames },
+  };
 }
 function toSrt(document, offsetMs = 0) {
   const stamp = ms => {
@@ -51,4 +84,4 @@ function toSrt(document, offsetMs = 0) {
   };
   return document.lines.map((item, i) => `${i + 1}\n${stamp(item.startMs + offsetMs)} --> ${stamp(item.endMs + offsetMs)}\n${item.text}\n`).join('\n');
 }
-module.exports = { frameRate, timecodeFrame, makeJob, toSrt };
+module.exports = { frameRate, timecodeFrame, lineRange, makeJob, toSrt };

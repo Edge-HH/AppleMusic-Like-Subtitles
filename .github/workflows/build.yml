@@ -46,9 +46,10 @@ jobs:
         with:
           name: AM-Lyrics-Title-Preset
           path: |
-            dist/AM Lyrics 32.setting
-            dist/AM Lyrics 64.setting
-            dist/AM-Lyrics.drfx
+            dist/zh/AM Lyrics.setting
+            dist/en/AM Lyrics.setting
+            dist/AM-Lyrics-ZH.drfx
+            dist/AM-Lyrics-EN.drfx
           if-no-files-found: error
 
   workflow-plugin:

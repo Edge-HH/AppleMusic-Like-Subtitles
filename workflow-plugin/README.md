@@ -1,20 +1,22 @@
-# AMLL 达芬奇歌词助手
+# AMLL Resolve 歌词助手
 
-面向 **DaVinci Resolve Studio 19+ / Windows** 的 Workflow Integration 插件。
-该目录独立于仓库中的 Fusion 歌词样式开发，不修改其 `src/`、`dist/` 或构建流程。
+面向 **DaVinci Resolve Studio 19+ / Windows** 的 Workflow Integration 插件，与仓库根目录生成的单一 `AM Lyrics` Fusion 标题预设配合使用。
 
-## 当前状态
+## 当前能力
 
-- 已实现：歌曲名／歌手搜索 AMLL、查看历史歌词版本、来源与作者展示。
-- 已实现：网易云、QQ、Apple Music、Spotify 单曲链接定位 AMLL。
-- 已实现：AMLL 没有匹配时，网易云／QQ 平台候选搜索及歌词回退。
-- 已实现：网易云 YRC 逐字歌词；QQ 平台回退为逐行 LRC，不支持其加密 QRC。
-- 已实现：本地 SRT、LRC、TTML、YRC 导入，以及直接粘贴歌词内容。
-- 已实现：UTF-8、UTF-16 BOM、GB18030/GBK 解码；可手动指定编码。
-- 已实现：逐字／逐行／混合精度标记、翻译、音译、和声和演唱者数据保留。
-- 已实现：播放头／时间线起点／绝对帧号锚点、毫秒偏移、JSON 对接任务与普通 SRT 导出。
-- **未接入：Apple Music 样式生成及自动添加到时间线。** `adapters/renderer.js` 明确返回不可用，添加按钮禁用，等待样式模块完成后接入。
-- **未完成：真实 Resolve 19、19.0.2、20+ 宿主的完整安装与 UI 回归矩阵。** 当前按照本机官方沙箱化 Electron 示例实现，不宣称所有 19+ 版本已实测。
+- 搜索 AMLL 逐字歌词，并在无结果时回退网易云／QQ 平台候选。
+- 导入本地 SRT、LRC、TTML、YRC，或直接粘贴歌词内容；本地文件不会上传。
+- 保留逐字／逐行／混合精度、翻译、音译、和声与演唱者数据。
+- 在导入前按连续行号选择歌词范围；所选第一行自动对齐时间线插入起点。
+- 支持播放头、时间线起点、绝对帧号和正负毫秒偏移。
+- 直接把真实逐字时间写入 `AM Lyrics` 的 `Lyrics` 与 `Timings` 控件；普通 LRC/SRT 只按整行显示，不会均分文字伪造逐字时间。
+- 支持两种落点：
+  - **散落到最上层新轨道**：每句一个 Fusion 源片段，主唱／和声重叠时自动增加额外顶部轨道。
+  - **合并为一个新 Fusion 片段**：先精确放置所有行，再用 Resolve 的 `CreateFusionClip` 合并。
+- 可扫描并选择媒体池中的其他 `Fusion` 类型项目作为标题来源；此路径只替换整行 Text+ 文本，明确降级为逐行歌词。
+- 仍可导出与当前范围、锚点和来源设置一致的 JSON 渲染任务，或导出所选范围的普通 SRT。
+
+> 自动时间线导入会创建 `AMLL 歌词生成` 媒体池文件夹保存每行的独立 Fusion 源。不要在仍使用这些歌词片段时删除该文件夹。
 
 ## 安装
 
@@ -29,7 +31,17 @@ npm run check
 powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
 ```
 
-如系统安装目录拒绝写入，请使用管理员 PowerShell 执行安装脚本。
+安装脚本会把既有插件备份到 `D:\CodexBackup`，再从本机 Resolve 官方开发示例复制匹配版本的 `WorkflowIntegration.node`；仓库与 ZIP 不分发 Blackmagic Design 专有二进制。
+
+同时安装根目录生成的标题预设：
+
+```powershell
+..\Build-Title-Preset.ps1
+..\tools\install.ps1
+```
+
+重启 Studio 后打开：**工作区 → 工作流程集成 → AMLL 歌词助手**。
+macOS 理论上支持 Workflow Integration，但此版本没有 macOS 安装器或验证；Linux 不在支持范围。
 
 ### 生成可分发插件包
 
@@ -39,50 +51,51 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
 ./Build-Plugin-Package.ps1
 ```
 
-脚本会按锁文件安装生产依赖、执行测试和语法检查，并生成 `dist/AMLL-Resolve-Workflow-v0.1.0.zip` 及对应 SHA-256 文件。ZIP 不分发 Blackmagic Design 专有的 `WorkflowIntegration.node`；最终安装时仍由包内 `scripts/install.ps1` 从用户本机 Resolve 开发示例复制桥接文件。
-脚本从本机 Resolve 开发示例复制 `WorkflowIntegration.node`，不将该专有二进制提交或再分发到仓库。
-更新前会将旧安装备份到 `D:\CodexBackup`，不会删除仓库或安装目录。
-更换 Resolve 版本后建议重新安装，以采用对应版本的原生桥接文件。
-
-重启 Studio 后打开：**工作区 → 工作流程集成 → AMLL 歌词助手**。
-macOS 理论上支持该插件机制，但此版本未提供 macOS 安装器或验证；Linux 不在此工作流插件的支持范围。
+脚本会按锁文件安装生产依赖、执行测试和语法检查，并生成 `dist/AMLL-Resolve-Workflow-v0.3.0.zip` 与 SHA-256 文件。
 
 ## 使用
 
-1. 搜索歌曲名／歌手，或粘贴单曲链接。默认仅在 AMLL 无匹配时请求平台；勾选“同时查询平台候选”可以主动查询。
-2. AMLL 列出历史提交版本，较新的优先展示，最多显示 100 个；用更精确关键词缩小范围。
-3. 点击候选预览；平台候选会再次按 ID 检查 AMLL，优先给出可用逐字版本。“直接尝试平台歌词”跳过这次检查。
-4. 可导入自己的 SRT/LRC，或展开“直接粘贴歌词内容”。本地文件不会上传。
-5. 正偏移延后歌词，负偏移提前歌词。JSON 使用当前时间线帧率及添加／导出时的播放头；SRT 只使用歌词偏移，不混入时间线锚点。
-6. 样式模块未接入时只能预览和导出，选择歌词本身不会改动时间线。
+1. 搜索歌曲名／歌手，粘贴单曲链接，或导入本地歌词。
+2. 选择与音源一致的歌词版本，核对逐字／逐行精度与预览。
+3. 在“导入范围”中填写开始行和结束行；预览中范围外歌词会变淡。
+4. 选择时间线锚点与歌词偏移。所选范围第一行的起点会落在锚点加偏移的位置，而不是保留整首歌开头的空白。
+5. 选择放置方式：顶部新轨道散落，或合并为一个 Fusion 片段。
+6. 选择标题来源：
+   - `AM Lyrics` 会写入真实逐字时间，单句上限为 256 个 Unicode 码点。
+
+   - 媒体池 Fusion 标题只写整行文本；如果项目没有可编辑 Fusion 合成或可写 Text+ `StyledText`，导入会停止并说明原因。
+7. 点击“导入所选歌词到时间线”。导入期间不要切换项目或时间线。
+
+## 时间线写入策略
+
+- 插件先在临时时间线实例化标题、写入 Text+ 参数，再转换成独立 Fusion 源；因此最终可以用公开 Resolve API 精确指定轨道、记录帧和片段长度。
+- 所有目标轨道都追加在现有最高视频轨道之上，不波纹移动、不覆盖原有剪辑。
+- 主唱与和声等重叠行采用区间分配算法放到不同顶部轨道；不重叠行复用同一轨道。
+- 合并模式只合并本次导入生成的片段；合并成功后清理空的中间轨道。
+- 失败时会尽力删除已经写入的目标片段、空轨道、临时时间线和未完成媒体项；若发生部分写入，错误消息会提示检查 `AMLL 歌词` 轨道。
 
 ## 网络与平台限制
 
-AMLL 使用仓库 `metadata/raw-lyrics-index.jsonl` 以及对应 `raw-lyrics/*.ttml`，不依赖 GitHub 搜索 API。
-索引缓存 24 小时，可手动刷新；网络故障时使用可用旧索引并显示其时间。歌词正文目前不做离线缓存。
-平台调用仅参考 163MusicLyrics 的客户端接口方式，不是平台承诺稳定的开放 API。
-可能受到登录、地区、限流和接口变化影响；不收集账号密码、不绕过访问限制，本版不提供 Cookie 登录配置。
-网易云需要登录时可使用歌曲链接尝试歌词获取，或导入本地文件；不能保证所有歌曲可取得。
-QQ 平台回退使用 `songmid`，纯数字 QQ ID 可匹配 AMLL，但不能直接执行 QQ 平台回退。
-短分享链接仅支持白名单 HTTPS 服务端重定向；依赖网页 JavaScript 跳转的短链需要复制最终单曲链接。
-Apple Music／Spotify 不直接抓取平台歌词，只用链接 ID 匹配 AMLL。
+AMLL 使用仓库 `metadata/raw-lyrics-index.jsonl` 与对应 `raw-lyrics/*.ttml`，索引缓存 24 小时；网络故障时会使用可用旧索引并显示时间。
+平台接口不是平台承诺稳定的开放 API，可能受到登录、地区、限流和接口变化影响；插件不收集账号密码，也不绕过访问限制。
+Apple Music／Spotify 不直接抓取平台歌词，只使用链接 ID 匹配 AMLL。
 
-## 歌词精度与时间
+## 歌词精度与限制
 
-普通 LRC、SRT 只有逐行时间，不会均分文字假装逐字。
-LRC 缺少行结束时间时使用下一条不同起点；末行默认 5 秒。增强 LRC 缺失末字结束时间时使用行结束，因此需核对音源。
-LRC `[offset:+N]` 按规范提前 N 毫秒，与 UI 中“正值延后”的语义相反；解析阶段已应用文件 offset。
-不接受负起点、反向时间、越界单词、超过 8 MB 的文件和带 DTD/实体声明的 XML。
-TTML 面向 AMLL 绝对时间格式，不支持 `timeContainer="seq"`、帧／tick 时间表达式或任意 TTML 相对时间布局。
-AMLL 不同平台 ID 可能对应不同音源时长，选择后必须自行核对版本和偏移。
+- 普通 LRC、SRT 只有逐行时间，不会均分文字假装逐字。
+- LRC `[offset:+N]` 按格式规范在解析阶段应用；UI 的正偏移表示让歌词延后，两者不要重复计算。
+- AM Lyrics 的 `|` 是分段符。歌词正文或逐字 token 中包含 `|` 时，自动导入会拒绝该行，避免写入错误文本。
+- AM Lyrics 单行最多 256 个 Unicode 码点；超过时需先拆行。媒体池标题不受此容量规则约束，但只支持逐行文本。
+- 媒体池来源必须能在时间线实例化后提供可编辑 Fusion comp 与 Text+ `StyledText` 输入；复杂自定义宏可能需要在 Fusion 页手动适配。
+- 自动导入目前不写入翻译、音译或歌手标签到画面，只保留在歌词文档和 JSON 中。
+- 真实 UI 回归目前只覆盖本机 Resolve Studio 20.3.2 的底层 API 路径；Resolve 19、19.0.2、免费版和其他平台仍需验证。
 
 ## 开发与测试
 
 ```powershell
 npm test       # 确定性离线测试
 npm run check  # JavaScript 语法检查
-npm run smoke  # 联网冒烟测试：会向 GitHub/网易云/QQ 发请求
+npm run smoke  # 联网冒烟测试，会向 GitHub／网易云／QQ 发请求
 ```
 
-联网测试失败时以具体源的响应为准，不应删除错误检查来“修复”测试。
-查看 [对接协议](docs/renderer-contract.md)、[测试记录](docs/verification.md) 与 [第三方声明](THIRD_PARTY_NOTICES.md)。
+查看 [渲染协议](docs/renderer-contract.md)、[验证记录](docs/verification.md) 与 [第三方声明](THIRD_PARTY_NOTICES.md)。

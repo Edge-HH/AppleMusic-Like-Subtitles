@@ -8,7 +8,7 @@ const { PlatformProviders } = require('./lib/providers');
 const { LyricService } = require('./lib/service');
 const { parseLyrics } = require('./lib/lyrics');
 const { readLyricFile } = require('./lib/files');
-const { makeJob, toSrt } = require('./lib/job');
+const { makeJob, lineRange, toSrt } = require('./lib/job');
 const { ResolveHost } = require('./lib/resolve');
 const renderer = require('./adapters/renderer');
 const host = new ResolveHost(() => require('./WorkflowIntegration.node'));
@@ -22,6 +22,10 @@ async function execute(action, args = {}) {
     return { timeline, hostError, renderer: { available: renderer.available === true, reason: renderer.reason || '' } };
   }
   if (action === 'search') return service.search(args.query, args.options);
+  if (action === 'titleSources') {
+    const context = await host.context();
+    return renderer.listTitles(context);
+  }
   if (action === 'select' || action === 'platformLyrics') {
     const result = await service[action](args.key);
     if (result.document) selected = result.document;
@@ -56,7 +60,8 @@ async function execute(action, args = {}) {
     if (!['srt', 'json'].includes(args.format)) throw new Error('不支持的导出格式');
     const offset = Number(args.settings?.offsetMs ?? 0);
     if (!Number.isFinite(offset) || Math.abs(offset) > 86400000) throw new Error('歌词偏移必须在正负 24 小时内');
-    const data = args.format === 'srt' ? toSrt(selected, offset) : JSON.stringify(job, null, 2);
+    const ranged = lineRange(selected, args.settings || {});
+    const data = args.format === 'srt' ? toSrt(ranged, offset) : JSON.stringify(job, null, 2);
     const choice = await dialog.showSaveDialog(window, { title: '导出歌词', defaultPath: `lyrics.${args.format}`, filters: [{ name: args.format.toUpperCase(), extensions: [args.format] }] });
     if (choice.canceled) return { canceled: true };
     await fs.writeFile(choice.filePath, data, 'utf8');

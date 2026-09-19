@@ -30,7 +30,7 @@ test('对接任务保留原始毫秒并显式计算帧区间', () => {
   const doc = parseLyrics('1\n00:00:01,000 --> 00:00:02,000\nHello', 'srt');
   const info = { name: '测试', id: 'id', frameRate: frameRate('24'), startFrame: 86400, currentTimecode: '01:00:10:00' };
   const job = makeJob(doc, { offsetMs: 500 }, info);
-  assert.equal(job.placement.startFrame, 86640); assert.deepEqual(job.placement.lineFrames[0], { startFrame: 86676, endFrameExclusive: 86700 }); assert.equal(doc.lines[0].startMs, 1000);
+  assert.equal(job.schemaVersion, 2); assert.equal(job.placement.startFrame, 86640); assert.deepEqual(job.placement.lineFrames[0], { startFrame: 86652, endFrameExclusive: 86676 }); assert.equal(doc.lines[0].startMs, 1000);
   assert.throws(() => makeJob(doc, { anchor: 'timeline-start', offsetMs: -2000 }, info));
   assert.throws(() => makeJob(doc, { anchor: 'frame', startFrame: 12.3 }, info));
   assert.throws(() => makeJob(doc, { offsetMs: NaN }, info));

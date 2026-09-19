@@ -1,122 +1,105 @@
 # AM Lyrics — Apple Music 风格逐字字幕
 
-面向 **DaVinci Resolve 19+** 的原生 Fusion 标题预设，无外部运行脚本、无字体打包、无 Studio 专属 OFX 节点。
+面向 **DaVinci Resolve Studio 19+** 的原生 Fusion 标题与歌词导入插件。
 
-> **当前状态：已在 Windows / Resolve Studio 20.3.2 做真实时间线导出验证。**
-> 32 / 64 字版、自定义时间、逐字出现、错误输入回退和简单英文空格已验证；另有 16 项自动测试通过。
-> Resolve 19、免费版、macOS / Linux 尚未实测，19+ 是兼容目标而非全版本保证。鼠标拖入与检查器界面布局尚未做 Computer Use 验收。
-> [查看真实导出预览与测试记录](docs/validation.md)。
+> 当前版本改为单一标题模板，不再向用户暴露旧版 `32 / 64` 节点容量区别。
+> 已在 Windows / Resolve Studio 20.3.2 验证 8 节点标题的真实时间线渲染，以及插件的精确轨道写入 API。
 
-## 下载 / 安装
+## 下载与语言版本
 
-仓库内已经生成可安装文件，不需要 Python。
+每个 Release 同时发布：
 
-- **方式 A：** 双击 [`dist/AM-Lyrics.drfx`](dist/AM-Lyrics.drfx)，在 Resolve 中确认安装。
-- **方式 B（Windows）：** 关闭 Resolve 后双击 [`Install-Windows.cmd`](Install-Windows.cmd)。脚本把两份 `.setting` 放入当前用户标题目录，遇到同名文件会先备份至 `D:\CodexBackup`。
-- **只选一种方式**，不要把 DRFX 和独立 setting 同时安装，以免重复显示。
+- `AM-Lyrics-Windows-Installer-v*.zip`：Windows 一键安装标题和 Workflow 插件，自动按系统界面语言选择中文或英文标题。
+- `AM-Lyrics-Title-ZH-v*.zip`：仅中文检查器标题；其中也包含可双击安装的 `AM-Lyrics-ZH.drfx`。
+- `AM-Lyrics-Title-EN-v*.zip`：仅英文检查器标题；其中也包含可双击安装的 `AM-Lyrics-EN.drfx`。
+- `AMLL-Resolve-Workflow-v*.zip`：仅 Workflow 插件。
 
-重新打开 Resolve，在 **剪辑页 → 效果库 → 标题** 搜索 `AM Lyrics`，拖到视频上方轨道。
+同一台机器只安装一个语言的标题版本；中文和英文包里的模板文件名都叫 `AM Lyrics.setting`，不会同时在效果库出现两套语言。
 
-| 预设 | 建议 |
-| --- | --- |
-| AM Lyrics 32 | 通常优先使用，每句最多 32 个 Unicode 码点 |
-| AM Lyrics 64 | 较长句，最多 64 个码点，合成负担更高 |
+### Windows 一键安装
 
-空格、标点、换行也计入容量。超长输入不会偷偷截掉后半句，而是退回完整静态文字，在 Status 中说明原因。
+1. 解压 `AM-Lyrics-Windows-Installer-v*.zip`。
+2. 双击 `Install-Windows.cmd`，接受管理员权限提示。
+3. 安装器会备份旧标题／旧插件到 `D:\CodexBackup`，删除旧的旧版 AM Lyrics 模板文件，再安装当前系统语言对应的单一标题与歌词助手。
+4. 重启 Resolve。
 
-## 最简单的使用方式
+也可以手动指定语言：
 
-1. 拖入 `AM Lyrics 32`，将片段长度设为约 **5 秒**。
-2. 在检查器的 **Lyrics / 用 | 分段** 输入：
+```powershell
+./Install-Windows.ps1 -Language zh
+./Install-Windows.ps1 -Language en
+```
+
+## 标题模板
+
+效果库中只显示 **AM Lyrics**。它不再用每字符一套 Text+／Blur／Merge，而是固定 8 个原生节点：
+
+- 底层 Text+：未唱文字的低亮、透明度和模糊。
+- 上层 Text+：已唱文字的高亮颜色。
+- 柔边 RectangleMask：从左向右推进，形成单字内部的渐变过渡。
+- SoftGlow：只给高亮部分添加轻微白色炫光。
+- Size / Center 表达式：歌词唱到时产生短促的轻微缩放与上浮。
+
+旧 32 字版约 97 个节点，旧 64 字版约 193 个节点；新模板固定 8 个节点，减少预览和缓存压力。单句安全上限改为 256 个 Unicode 码点，超限会静态回退并提示，不会截断。
+
+## 检查器
+
+- **控制页**：歌词、逐字时间、自动时长、延后、渐变宽度、跳动、上浮、帧率和“重置动画参数”。
+- **Style 页**：字体、字重、字号、位置、字距、颜色、未唱／已唱明暗和模糊、炫光及“重置样式参数”。
+- 不再存在空白“控制”页或单独的 Lyrics 页。
+- 中文包只显示中文标签，英文包只显示英文标签。
+
+默认风格调整为更接近 Apple Music 的白色粗体、大字号、暗灰未唱文字、轻模糊、柔边逐词亮起、轻微上浮缩放和克制炫光。实现原则参考 AMLL 一手源码的渐变遮罩、上浮和强调动画，但 Fusion 实现为独立节点设计，详见 [`docs/amll-motion-research.md`](docs/amll-motion-research.md)。
+
+## 手动使用
+
+1. 从效果库拖入 `AM Lyrics`。
+2. 在控制页输入 `我|想要|留住|这一刻`。
+3. 可留空逐字时间并使用自动时长，或输入：
 
    ```text
-   我|想要|留住|这一刻
+   0-0.5|0.5-1.5|1.8-2.6|2.6-4.2
    ```
 
-3. **Timings 留空**，Auto duration 设为 `4`，Offset 保持 `0.3`：片段开始 0.3 秒后，从左到右逐字变亮，在约 4.3 秒时唱完。
-4. 需要逐字出现，而不是提前看到整句：把 **Idle opacity / 未唱透明度** 调成 `0`。
-5. 改颜色、字体、粗细、位置、字号，在 **Style** 页调整。
+4. `|` 是分段符，不会显示；每组时间对应一个分段。
+5. 需要恢复推荐值时，使用控制页和 Style 页底部的重置按钮。
 
-`|` 只用于分段，不会出现在画面中。不填时间时，按照**字符数**均分整句时长，而不是每段分配一样多时间。
+## 从歌词助手直接导入
 
-## 跟着演唱自定义节奏
+打开 **工作区 → 工作流程集成 → AMLL 歌词助手**：
 
-对应上面的四段，填四组时间：
+1. 搜索 AMLL／平台歌词，或导入 SRT、LRC、TTML、YRC。
+2. 导入前选择连续歌词范围。
+3. 选择播放头、时间线起点或绝对帧，并设置偏移。
+4. 选择散落到顶部新轨道，或合并成一个 Fusion 片段。
+5. 选择 `AM Lyrics` 保留真实逐字时间；选择媒体池其他 Fusion 标题会明确降级为逐行歌词。
 
-```text
-0-0.5|0.5-1.5|1.8-2.6|2.6-4.2
-```
+插件不会覆盖或波纹移动现有剪辑。重叠的主唱／和声会自动放到额外顶部轨道。
 
-每组都是 `开始秒数-结束秒数`，相对于片段起点，**再统一叠加 Offset**。要把填写时间直接当片段时间，请设 `Offset = 0`。
-
-- `想要` 的两字均分 `0.5–1.5` 秒；`留住` 在 `1.8` 秒开始，中间允许留空拍。
-- 每个字要独立对拍：写成 `我|想|要|留|住|这|一|刻`，填八组时间。
-- 所有时间必须递增、不能重叠，结束必须大于开始。
-- 无需手动打关键帧；复制片段再改词和时间即可复用。
-- 不做音频识别，不会自动知道歌词或唱词时刻。
-
-更多例子：[examples/lyrics.md](examples/lyrics.md)。
-
-## 外观参数
-
-| 参数 | 默认 | 作用 |
-| --- | --- | --- |
-| Font / Style | Microsoft YaHei / Bold | Windows 中文优先；更换字体后选择该字体实际提供的字重 |
-| Size | 0.065 | Fusion 归一化字号，不是像素 |
-| Position | 画面中心 | 整句位置，不影响各字相对布局 |
-| Color | 白色 | 已唱文字 RGB，未唱文字以该颜色乘亮度系数 |
-| Idle opacity | 0.35 | 未唱部分透明度；0 为逐字出现 |
-| Active opacity | 1 | 已唱部分透明度 |
-| Idle brightness | 0.85 | 未唱颜色的亮度系数，和透明度分开 |
-| Idle blur | 1.5 | 未唱文字的 Fusion 原生 Blur 大小，不承诺等同 CSS 像素 |
-| Active blur | 0 | 已唱文字模糊 |
-| Transition | 0.85 | 每字时间里用于平滑变化的比例；数值越大越柔和 |
-| Overall opacity | 1 | 整体透明度 |
-| FPS | 0 | 读取合成帧率；若时间不一致，手动填项目帧率 |
-
-默认是白色粗字、暗字预显、逐字清晰化。**这是风格近似，不是 Apple Music 完整播放器移植**：不包含多句弹簧滚动、整词内连续扫光、长音弹跳、背景流体或音频同步。当前每字是整体渐亮，不是字形内部从左到右填充。
-
-## 限制和注意事项
-
-- 19+ 是兼容目标，后续版本并不自动等于已验证；请见 [验证清单](docs/validation.md)。
-- 只用了 Text+、Blur、Merge 和 Lua 表达式，设计上不要求 Studio；免费版仍须实际验证。
-- 中文基本字符、简单拉丁文字是优先目标。Emoji 组合、组合音标、阿拉伯连写、字体连字等，码点数量不等于字形数量，**不保证逐字隔离正确**。
-- 简单英文空格已实测；换行以及不同字体的连字索引行为仍需实际画面验证。首轮建议使用短句单行中文。
-- 推荐每个标题片段放一句歌词。不会自动拆行、分页或把整首歌词切成多个片段。
-- 长句超出画面时请缩小字号或拆成多个片段；不自动缩小文字。
-- 每个字槽使用独立 Text+、Blur、Merge；32 字版有 97 个节点，64 字版有 193 个。没有实时播放性能保证，4K 或多条叠加建议降低预览分辨率、使用 Fusion 缓存。
-- 裁剪或变速后的对拍以实际片段为准；动画使用合成 RenderStart 作为零点，不会随拉长片段自动拉伸手填时间。
-- 字体不随预设分发，Mac/Linux 需改为本机有的中文无衬线粗体；不提供 Apple 专有字体。
-
-## 开发与维护
-
-仓库根目录提供两个一键构建入口：
+## 开发与构建
 
 ```powershell
-./Build-Title-Preset.ps1   # 生成两份 .setting 与 AM-Lyrics.drfx
-./Build-Plugin-Package.ps1 # 测试并生成版本化 Workflow Integration 插件 ZIP 与 SHA-256
+./Build-Title-Preset.ps1
+./Build-Plugin-Package.ps1
+./Build-Release-Packages.ps1
 ```
 
-标题预设的开发测试仍可单独执行：
+测试：
 
 ```powershell
-# 仅开发测试需要 lupa；普通使用预设无需安装任何 Python 依赖。
-python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -v
+cd workflow-plugin
+npm test
+npm run check
 ```
 
-- `src/timing.lua`：唯一的分段、时间、UTF-8 计数和错误处理逻辑。
-- `tools/build.py`：生成原生节点树以及可复现的 DRFX 压缩包。
-- `Build-Title-Preset.ps1`：面向本地与 CI 的标题预设一键入口。
-- `Build-Plugin-Package.ps1`：安装锁定依赖、测试并生成可分发插件包。
-- `tools/install.ps1`：非管理员安装，支持 `-WhatIf`、`-Destination`、`-BackupRoot`。
-- `tests/test_preset.py`：执行真实 Lua 5.1，而不是用 Python 另写一套计时逻辑。
-- `docs/research.md`：一手资料、参考范围和未验证假设。
-- `docs/validation.md`：测试证据与 Resolve 内验收步骤。
-- `docs/automation.md`：一键构建、GitHub Actions 与 `main` 保护规则。
+发布 tag `v*` 时，`.github/workflows/release.yml` 会构建中文版、英文版、Windows 一键安装包和 Workflow 插件，并上传到对应 GitHub Release。
 
-修改源码后必须重新构建并测试，避免提交与源码不同步的 dist。现有标题片段是否随重新安装更新取决于 Resolve 的模板实例化行为；测试新版时请重新拖入。
+## 限制
 
-## 参考与归属
+- 这是 Apple Music 风格近似，不是 Apple Music 官方播放器或 AMLL 网页渲染器的逐帧移植。
+- 固定 8 节点方案优先流畅性；单字渐变遮罩按整行几何估算，不承诺复杂换行、阿拉伯连写、字体连字和组合 Emoji 的字形级准确性。
+- 免费版、Resolve 19、macOS 尚未形成完整实测矩阵。
+- 字体不随模板分发；中文默认优先 `Microsoft YaHei UI`，英文默认 `Arial`。
 
-视觉方向参考 [amll-dev/applemusic-like-lyrics](https://github.com/amll-dev/applemusic-like-lyrics)，本项目没有复制其渲染代码。与 Apple、Blackmagic Design、AMLL 团队无隶属或官方授权关系。
+完整测试证据见 [`docs/validation.md`](docs/validation.md)。

@@ -32,3 +32,11 @@
 仅参考用户本机 Resolve Developer 的 Workflow Integrations 示例及 API 文档。
 安装脚本在用户本机复制 WorkflowIntegration.node，不在本项目分发该专有二进制。
 本项目不是 Blackmagic Design、Apple、网易云或 QQ 的官方产品。
+
+## amll-dev/applemusic-like-lyrics（视觉行为参考）
+
+参考仓库：https://github.com/amll-dev/applemusic-like-lyrics
+固定参考提交：2ca8e58051d1df306cbbd6bd8e66cb0293565b1b
+许可：上游仓库声明 AGPL-3.0，完整许可证见上游 `LICENSE`。
+
+本项目没有复制上游 TypeScript、CSS 或动画代码。当前 Fusion 模板仅参考其公开视觉行为：逐词渐变遮罩、轻微上浮、字符强调缩放与辉光，并用独立的 Resolve 原生 Text+、RectangleMask、Blur、SoftGlow、Merge 节点重新实现。

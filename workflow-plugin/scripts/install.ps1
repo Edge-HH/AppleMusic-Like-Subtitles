@@ -25,4 +25,4 @@ foreach ($name in @('main.js', 'preload.js', 'manifest.xml', 'package.json', 'pa
 Copy-Item -LiteralPath $native -Destination (Join-Path $destination 'WorkflowIntegration.node') -Force
 Write-Host "已安装：$destination"
 Write-Host '请重启 DaVinci Resolve Studio，从 工作区 → 工作流程集成 → AMLL 歌词助手 打开。'
-Write-Host '当前样式适配器未接入时，添加按钮会禁用；搜索、导入、预览和导出仍可使用。'
+Write-Host '插件可把所选歌词范围直接写入顶部新轨道或合并为 Fusion 片段；请同时安装单一 AM Lyrics 标题预设。'
