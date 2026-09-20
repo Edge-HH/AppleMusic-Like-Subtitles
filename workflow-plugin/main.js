@@ -9,6 +9,7 @@ const { LyricService } = require('./lib/service');
 const { parseLyrics } = require('./lib/lyrics');
 const { readLyricFile } = require('./lib/files');
 const { makeJob, lineRange, toSrt } = require('./lib/job');
+const { formatDocument } = require('./lib/word-joiner');
 const { createResolveHost } = require('./lib/resolve');
 const renderer = require('./adapters/renderer');
 const host = createResolveHost(() => require('./WorkflowIntegration.node'));
@@ -54,8 +55,11 @@ async function execute(action, args = {}) {
       const context = await host.context();
       job = makeJob(selected, args.settings || {}, context.info);
       if (action === 'render') {
-        if (host.remote) return host.render(job);
-        const result = await renderer.render({ job, ...context });
+        const onProgress = progress => {
+          if (window && !window.isDestroyed()) window.webContents.send('amll:render-progress', progress);
+        };
+        if (host.remote) return host.render(job, onProgress);
+        const result = await renderer.render({ job, ...context, onProgress });
         if (!Number.isSafeInteger(result?.insertedCount) || result.insertedCount < 1) throw new Error('渲染模块未确认创建剪辑，请检查时间线，勿直接重复添加');
         return result;
       }
@@ -63,7 +67,7 @@ async function execute(action, args = {}) {
     if (!['srt', 'json'].includes(args.format)) throw new Error('不支持的导出格式');
     const offset = Number(args.settings?.offsetMs ?? 0);
     if (!Number.isFinite(offset) || Math.abs(offset) > 86400000) throw new Error('歌词偏移必须在正负 24 小时内');
-    const ranged = lineRange(selected, args.settings || {});
+    const ranged = formatDocument(lineRange(selected, args.settings || {}), args.settings || {});
     const data = args.format === 'srt' ? toSrt(ranged, offset) : JSON.stringify(job, null, 2);
     const choice = await dialog.showSaveDialog(window, { title: '导出歌词', defaultPath: `lyrics.${args.format}`, filters: [{ name: args.format.toUpperCase(), extensions: [args.format] }] });
     if (choice.canceled) return { canceled: true };

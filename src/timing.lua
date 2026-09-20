@@ -73,10 +73,13 @@ if count==0 then errorMessage="Enter lyrics" end
 if count>MAX_CHARACTERS then errorMessage="Over 256 characters: split the lyric" end
 local valid = errorMessage == nil
 local units = {}
+local floatEnabled=numberValue(Controller.EnableFloat,1)>0.5
+local emphasisEnabled=numberValue(Controller.EnableEmphasis,1)>0.5
+local staggerEnabled=numberValue(Controller.EnableStagger,1)>0.5
 local baseHeight=numberValue(Controller.FloatHeight,.05)
 local minFloat=math.max(.01,numberValue(Controller.FloatDuration,1))
 local emphasisStrength=numberValue(Controller.Emphasis,1)
-local glowStrength=numberValue(Controller.Glow,1)
+local glowStrength=numberValue(Controller.EnableGlow,1)>0.5 and numberValue(Controller.Glow,1) or 0
 local bg=numberValue(Controller.BackgroundVocal,0)>0.5 and 2 or 1
 local threshold=numberValue(Controller.EmphasisDuration,1)
 local lastBoost=numberValue(Controller.LastWordBoost,1)>0.5
@@ -94,11 +97,11 @@ if valid then
     for rangeIndex,range in ipairs(ranges) do
         local span=range.finish-range.start
         local floatDuration=math.max(minFloat,span)
-        local floatProgress=bezier((now-range.start)/floatDuration,0,0,.58,1)
+        local floatProgress=floatEnabled and bezier((now-range.start)/floatDuration,0,0,.58,1) or 0
         local word=segments[rangeIndex]
         local trimmed=word:gsub("^%s+", ""):gsub("%s+$", "")
         local trimmedLength=#characters(trimmed)
-        local emphasis=span>=threshold and emphasisStrength>0 and
+        local emphasis=emphasisEnabled and span>=threshold and emphasisStrength>0 and
             (cjk(word) or (trimmedLength>1 and trimmedLength<=7))
         local du=math.max(1,span)
         local amount=du/2
@@ -110,19 +113,19 @@ if valid then
         blur=math.min(.8,blur)
         -- Ordinary words share one native layout/sweep. Split only emphasized short words.
         -- Long CJK phrases use word-level emphasis rather than exceeding the motion budget.
-        local splitChars=emphasis and range.length<=8
+        local splitChars=staggerEnabled and emphasis and range.length<=8
         local pieces=splitChars and range.length or 1
         for j=0,pieces-1 do
             local first=range.first+(splitChars and j or 0)
             local last=splitChars and first or range.first+range.length-1
             local delay=range.start+(splitChars and du/2.5/math.max(1,range.length)*j or 0)
             local pulse=emphasis and emphasisEnvelope((now-delay)/du) or 0
-            local floatPulse=emphasis and math.sin(clamp((now-delay+.4)/(du*1.4),0,1)*math.pi) or 0
+            local floatPulse=floatEnabled and emphasis and math.sin(clamp((now-delay+.4)/(du*1.4),0,1)*math.pi) or 0
             local start=range.start
-            local finish=range.start+floatDuration
+            local finish=range.start+(floatEnabled and floatDuration or span)
             if emphasis then start=math.min(start,delay-.4);finish=math.max(finish,delay+du*1.4-.4,delay+du) end
             units[#units+1]={index=first,last=last, progress=clamp((now-range.start)/span,0,1),
-                lift=bg*(baseHeight*floatProgress+.05*floatPulse)+pulse*.025*amount,
+                lift=floatEnabled and (bg*(baseHeight*floatProgress+.05*floatPulse)+pulse*.025*amount) or 0,
                 scale=1+pulse*.1*amount, dx=splitChars and -pulse*.03*amount*(range.length/2-j) or 0,
                 glow=pulse*blur*glowStrength, radius=math.min(.3,blur*.3),
                 start=start,finish=math.max(finish,range.finish),

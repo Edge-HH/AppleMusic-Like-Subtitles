@@ -1,79 +1,64 @@
 # 歌词时间线渲染协议 v2
 
-## 接入边界
+## 边界
 
-插件主进程负责歌词选择、范围裁剪、时间线定位与安全校验；`adapters/renderer.js` 是唯一 Resolve 写入适配层。前端只能通过白名单 IPC 调用，不暴露通用 `require`、文件系统或任意 Resolve API。
+主进程执行选择范围、连接符格式化与帧定位。普通 Scripts 模式由 `script-host.py` 写入 Resolve；Studio Workflow 兼容模式由 `adapters/renderer.js` 写入。前端只通过允许的 IPC 命令操作，不直接调用 SDK。
 
-适配层提供：
+两种后端都执行“共享定位源 + 独立顶层文字图”的流程，详细结构及原生接口限制见 [direct-import.md](direct-import.md)。
 
-```js
+## 数据
+
+```json
 {
-  available: true,
-  async listTitles({ project }) {},
-  async render({ job, project, timeline }) {}
+  "schemaVersion": 2,
+  "kind": "amll.resolve.render-job",
+  "document": {"lines": []},
+  "render": {
+    "placementMode": "scattered",
+    "titleSource": "am-default",
+    "joinerMode": "auto",
+    "wordSeparator": ""
+  },
+  "placement": {
+    "startFrame": 86400,
+    "offsetMs": 0,
+    "frameRate": {"numerator": 24, "denominator": 1},
+    "timelineId": "...",
+    "timelineName": "...",
+    "videoTrackPolicy": "new-top-track",
+    "lineFrames": [{"startFrame": 86400, "endFrameExclusive": 86448}]
+  }
 }
 ```
 
-`listTitles` 返回内置 AM Lyrics 预设和媒体池中可选的 Fusion 项目。`render` 必须在全部验证和写入完成后返回正整数 `insertedCount`；部分失败需尽力回滚并明确说明残留位置。
+- `document` 已范围裁剪、重新归零并完成显示格式化；后端不再重复追加连接符。
+- `joinerMode` / `wordSeparator` 保存格式化选项。预览、任务、JSON 和 SRT 共用 `lib/word-joiner.js`。
+- 每个 lineFrame 使用包含起点、不包含终点的帧区间。插入后检查 GetStart/GetDuration，不静默接受错误长度。
+- `scattered` 返回多句独立 Fusion 文字；`fusion-clip` 为兼容保留的选项值，现创建一个外层 Compound Clip。
+- `am-default` 和旧的 am-auto/am-32/am-64 别名使用单一 AM Lyrics；普通脚本模式仍只支持 AM Lyrics，媒体池自定义标题仅在原生兼容桥接中支持，并降级为逐行。
 
-## job v2
+## 写入顺序
 
-- `schemaVersion: 2`
-- `kind: "amll.resolve.render-job"`
-- `document`: 已裁剪到用户选择范围的歌词文档，第一行起点被重新归零；原始范围记录在 `document.source.range`。
-- `render.placementMode`: `scattered` 或 `fusion-clip`。
-- `render.titleSource`: `am-default` 或 `media:<MediaPoolItem unique id>`。
-- `placement.startFrame`: Resolve 时间线绝对帧号。
-- `placement.offsetMs`: UI 偏移，正值延后；不得再次应用歌词文件自身 offset。
-- `placement.frameRate`: `{ numerator, denominator }`。
-- `placement.timelineId / timelineName`: 生成任务时的目标时间线。
-- `placement.videoTrackPolicy: "new-top-track"`。
-- `placement.lineFrames[i]`: 对应裁剪后 `document.lines[i]` 的 `{ startFrame, endFrameExclusive }`。
+1. 校验协议、时间线 ID、帧区间和最终文字，未通过不创建轨道。
+2. 创建一条准备时间线，只实例化一次已安装的标题；导出标题图。
+3. 将定位源文字清空，只创建一次可用于 AppendToTimeline 的 Fusion 源。
+4. 回到原时间线，按重叠关系创建顶部新轨道，一次批量定位片段。
+5. 每个实例导入同一模板文件为独立合成，激活新合成并删除继承的包装图，再写入本句文字、时间、FPS、和声参数。
+6. 合并模式只调用一次 CreateCompoundClip。
+7. 清理准备时间线、恢复媒体池文件夹。失败时只尝试回滚本次新增片段和空轨道；共享定位源成功后保留。
 
-范围对齐公式：
+标题样式来自已安装模板，插件不改动其动画逻辑。
 
-```text
-rangedLineMs = originalLineMs - selectedFirstLine.startMs
-absoluteLineFrame = placement.startFrame
-                  + round((rangedLineMs + placement.offsetMs) * fps / 1000)
+## 长任务响应
+
+非写入 RPC 仍为单 JSON。render 使用 NDJSON：
+
+```json
+{"type":"progress","data":{"stage":"正在写入顶层 Fusion 文字","completed":1,"total":20}}
+{"type":"heartbeat","elapsedSeconds":125}
+{"ok":true,"data":{"insertedCount":20,"sourceLineCount":20,"createdTrackCount":1,"structure":"top-level-fusion"}}
 ```
 
-逐字时间也减去同一个范围起点，再在每句写入标题时减去该句起点，得到 Fusion 片段内相对秒数。不得按字符串平均分配时间。
+实际一次响应中以上对象各占一行。最终帧也可能是 `ok:false` 与 error；HTTP 200 不代表写入已完成。
 
-## AM Lyrics 写入
-
-- 使用单一 `AM Lyrics` 标题；单句超过 256 个 Unicode 码点时在时间线写入前报错。
-- `Lyrics` 使用真实 `words[].text` 以 `|` 连接。
-- `Timings` 使用 `word.startMs/endMs - line.startMs`，单位为秒。
-- `Offset=0`，因为时间线位置已经包含全局偏移。
-- `FPS` 写入真实时间线帧率。
-- 无逐字数据的行只写一个整行段和一个整行区间，不伪造逐字。
-
-## 媒体池 Fusion 标题
-
-扫描媒体池中 `GetClipProperty().Type` 包含 `Fusion` 的项目，并排除插件自己的 `AMLL 歌词生成` 文件夹。导入时复制到临时时间线，查找可写 Text+ `StyledText` 并写入整行歌词。此路径始终报告 `timing: "line"`。
-
-如果项目不能产生可编辑 Fusion comp，或没有可写 Text+，必须停止并返回明确错误；不能假报成功，也不能静默改用 AM Lyrics。
-
-## 时间线事务
-
-1. 核对当前时间线唯一 ID 与 job 一致。
-2. 在 `AMLL 歌词生成` 媒体池文件夹创建临时时间线。
-3. 为每句创建指定长度的标题实例，写入参数，再转换为独立 Fusion 源。
-4. 根据半开区间重叠关系分配轨道 lane；追加足够数量的顶部视频轨道。
-5. 使用 `MediaPool.AppendToTimeline` 的 `trackIndex`、`recordFrame`、`startFrame`、`endFrame` 精确写入。
-6. `fusion-clip` 模式调用 `Timeline.CreateFusionClip` 合并本次生成的项目，并删除空中间轨道。
-7. 删除临时时间线并恢复用户原媒体池文件夹。
-
-失败时尽力删除目标片段、空轨道、临时时间线和未完成媒体项。成功导入后的独立 Fusion 源必须保留在媒体池，否则时间线引用可能离线。
-
-## 验收清单
-
-1. 选择范围后第一行准确落在锚点加偏移位置。
-2. 23.976／29.97／59.94 使用有理帧率与正确丢帧时间码。
-3. 逐字来源保留真实 token 时间，逐行来源没有伪造 token。
-4. 现有轨道和剪辑不被覆盖或波纹移动。
-5. 重叠行使用额外顶部轨道；不重叠行复用轨道。
-6. 散落和单 Fusion 片段两种模式都核对片段数量、起止帧与长度。
-7. 自定义媒体池标题明确报告逐行降级和不兼容结构。
-8. Studio 19、19.0.2 与后续版本分别实机验证后再扩大兼容声明。
+无 render 空闲截止时间、不自动重试写请求；丢失最终结果提示任务状态不确定。SDK 调用保持串行，心跳线程不访问 Resolve。

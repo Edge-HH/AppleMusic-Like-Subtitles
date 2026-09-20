@@ -22,7 +22,7 @@ test('渲染任务记录范围、标题来源与放置模式', () => {
   assert.equal(job.schemaVersion, 2);
   assert.equal(job.document.lines[0].text, 'B');
   assert.equal(job.document.lines[0].startMs, 0);
-  assert.deepEqual(job.render, { placementMode: 'fusion-clip', titleSource: 'media:abc' });
+  assert.deepEqual(job.render, { placementMode: 'fusion-clip', titleSource: 'media:abc', joinerMode: 'auto', wordSeparator: '' });
   assert.deepEqual(job.placement.lineFrames[0], { startFrame: 86640, endFrameExclusive: 86664 });
 });
 

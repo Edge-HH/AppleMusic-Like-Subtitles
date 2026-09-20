@@ -1,5 +1,6 @@
 'use strict';
 const { validateDocument } = require('./lyrics');
+const { formatDocument, options: joinerOptions } = require('./word-joiner');
 
 function frameRate(value) {
   const fps = Number.parseFloat(value);
@@ -48,7 +49,7 @@ function lineRange(document, settings = {}) {
   return selected;
 }
 function makeJob(document, settings, context) {
-  const rangedDocument = lineRange(document, settings);
+  const rangedDocument = formatDocument(lineRange(document, settings), settings);
   const offsetMs = Number(settings.offsetMs ?? 0);
   if (!Number.isFinite(offsetMs) || Math.abs(offsetMs) > 86400000) throw new Error('歌词偏移必须在正负 24 小时内');
   const rate = context.frameRate;
@@ -72,7 +73,7 @@ function makeJob(document, settings, context) {
     schemaVersion: 2,
     kind: 'amll.resolve.render-job',
     document: rangedDocument,
-    render: { placementMode, titleSource },
+    render: { placementMode, titleSource, ...joinerOptions(settings) },
     placement: { startFrame, offsetMs, frameRate: rate, videoTrackPolicy: 'new-top-track', timelineName: context.name, timelineId: context.id, lineFrames: frames },
   };
 }

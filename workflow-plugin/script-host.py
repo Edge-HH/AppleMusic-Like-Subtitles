@@ -16,6 +16,10 @@ import secrets
 import subprocess
 import sys
 import time
+import tempfile
+import shutil
+from contextlib import contextmanager
+import threading
 import urllib.parse
 from fractions import Fraction
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -284,34 +288,65 @@ def get_or_create_generated_folder(media_pool):
     return created
 
 
-def create_line_media(media_pool, scratch, line, frame, fps, index):
-    duration_frames = frame["endFrameExclusive"] - frame["startFrame"]
-    if duration_frames < 1:
-        duration_frames = 1
-    if call(scratch, "SetCurrentTimecode", call(scratch, "GetStartTimecode", default="00:00:00:00"), default=True) is False:
-        raise HostError("无法定位歌词临时时间线")
-    if call(scratch, "SetMarkInOut", 0, duration_frames - 1, "video", default=True) is False:
-        raise HostError("无法设置临时标题长度")
-    source_item = call(scratch, "InsertFusionTitleIntoTimeline", "AM Lyrics")
-    if source_item is None:
-        raise HostError("找不到 Fusion 标题“AM Lyrics”，请先安装标题预设")
-    line = dict(line)
-    line["_rangeLine"] = index + 1
-    configure_am_title(source_item, line, fps)
-    fusion_item = call(scratch, "CreateFusionClip", [source_item])
-    if fusion_item is None:
-        raise HostError(f"无法为第 {index + 1} 行创建 Fusion 片段")
-    media_item = call(fusion_item, "GetMediaPoolItem")
-    if media_item is None:
-        raise HostError(f"第 {index + 1} 行的 Fusion 片段没有生成媒体池项目")
-    short_text = re.sub(r"\s+", " ", as_text(line.get("text"))).strip()[:36] or f"第 {index + 1} 行"
-    call(media_item, "SetClipProperty", "Clip Name", f"{index + 1:03d} {short_text}")
-    call(scratch, "DeleteClips", [fusion_item], False)
-    call(scratch, "ClearMarkInOut", "video")
-    return media_item
+@contextmanager
+def template_directory():
+    directory = Path(tempfile.mkdtemp(prefix="amll-title-"))
+    try:
+        yield directory
+    finally:
+        # Only clean the exact system-temp leaf this invocation created. Cleanup
+        # failure must not turn a successful timeline import into a false failure.
+        resolved = directory.resolve()
+        if resolved.parent == Path(tempfile.gettempdir()).resolve() and resolved.name.startswith("amll-title-"):
+            try:
+                shutil.rmtree(resolved)
+            except OSError:
+                logging.warning("AMLL temporary template cleanup deferred: %s", resolved)
 
 
-def render(resolve, job):
+def create_title_seed(scratch, duration_frames, template_path):
+    """Bootstrap once; the shared source is never used as the lyrics graph."""
+    if call(scratch, "SetMarkInOut", 0, duration_frames - 1, "video") is not True:
+        raise HostError("无法设置标题源长度")
+    title = call(scratch, "InsertFusionTitleIntoTimeline", "AM Lyrics")
+    if title is None or comp_for_item(title) is None:
+        raise HostError("无法加载 AM Lyrics 标题，请检查标题安装并重启 Resolve")
+    if call(title, "ExportFusionComp", str(template_path), 1) is not True:
+        raise HostError("无法导出现有标题节点")
+    # The native insertion API cannot select a destination track. A single empty
+    # source enables frame/track-addressed AppendToTimeline without per-line wrappers.
+    macro = call(comp_for_item(title), "FindTool", "AMLLyrics")
+    if macro is None:
+        raise HostError("标题中缺少 AMLLyrics 控制器")
+    call(macro, "SetInput", "Lyrics", "")
+    carrier = call(scratch, "CreateFusionClip", [title])
+    seed = call(carrier, "GetMediaPoolItem") if carrier is not None else None
+    if seed is None:
+        raise HostError("无法建立可复用的 Fusion 定位源")
+    call(seed, "SetClipProperty", "Clip Name", "AMLL 标题定位源（共享，不含歌词）")
+    return seed
+
+
+def install_title_graph(item, template_path, line, fps):
+    """Each timeline instance owns one independent top-level title composition."""
+    previous = values(call(item, "GetFusionCompNameList", default=[]))
+    comp = call(item, "ImportFusionComp", str(template_path))
+    if comp is None:
+        raise HostError("无法将标题节点直接写入时间线片段")
+    current = values(call(item, "GetFusionCompNameList", default=[]))
+    added = [name for name in current if name not in previous]
+    if len(added) != 1 or call(item, "LoadFusionCompByName", added[0]) is None:
+        raise HostError("无法确认新标题合成为活动合成")
+    # Remove the inherited MediaIn wrapper, rather than leave a second editable
+    # composition that still points to a nested title or another lyric instance.
+    for name in previous:
+        if call(item, "DeleteFusionCompByName", name) is not True:
+            raise HostError("无法清除定位源的旧包装合成")
+    configure_am_title(item, line, fps)
+    call(item, "SetName", as_text(line.get("text"))[:80] or "AM Lyrics")
+
+
+def render(resolve, job, progress=None):
     if job.get("schemaVersion") != 2 or job.get("kind") != "amll.resolve.render-job":
         raise HostError("渲染任务版本不受支持，请重新生成任务")
     lines = job.get("document", {}).get("lines") or []
@@ -320,131 +355,120 @@ def render(resolve, job):
     if not lines or len(lines) != len(frames):
         raise HostError("歌词任务行数与帧区间不一致")
     current = context(resolve)
-    timeline = current["timeline"]
-    timeline_id = as_text(call(timeline, "GetUniqueId", default=call(timeline, "GetName")))
-    if timeline_id != as_text(placement.get("timelineId")):
+    timeline, project = current["timeline"], current["project"]
+    if current["info"]["id"] != as_text(placement.get("timelineId")):
         raise HostError("当前时间线已变化，请刷新连接后重新导入")
-    project = current["project"]
-    media_pool = call(project, "GetMediaPool")
-    original_folder = call(media_pool, "GetCurrentFolder")
-    generated_folder = get_or_create_generated_folder(media_pool)
     title_source = as_text(job.get("render", {}).get("titleSource", "am-default"))
     if not title_source.startswith("am-"):
         raise HostError("普通脚本模式暂只支持 AM Lyrics 标题来源，请选择 AM Lyrics")
-    fps_info = placement.get("frameRate") or {"numerator": 24, "denominator": 1}
-    fps = float(fps_info["numerator"]) / float(fps_info["denominator"])
+    mode = job.get("render", {}).get("placementMode", "scattered")
+    if mode not in ("scattered", "fusion-clip"):
+        raise HostError("无效的歌词放置方式")
+    rate = placement.get("frameRate") or {}
+    numerator, denominator = rate.get("numerator"), rate.get("denominator")
+    if not isinstance(numerator, (int, float)) or not isinstance(denominator, (int, float)) or not math.isfinite(numerator) or not math.isfinite(denominator) or numerator <= 0 or denominator <= 0:
+        raise HostError("无有效时间线帧率")
+    fps = numerator / denominator
+    durations = []
+    for index, (line, frame) in enumerate(zip(lines, frames)):
+        start, end = frame.get("startFrame"), frame.get("endFrameExclusive")
+        if type(start) is not int or type(end) is not int or end <= start or start < current["info"]["startFrame"]:
+            raise HostError(f"第 {index + 1} 行帧区间无效")
+        durations.append(end - start)
+        # Validate the final, joined text before adding folders, tracks or clips.
+        build_am_inputs(dict(line, _rangeLine=index + 1), fps)
+
+    def report(stage, completed=0):
+        if progress is not None:
+            try:
+                progress({"stage": stage, "completed": completed, "total": len(lines)})
+            except Exception:
+                pass  # A disconnected progress listener does not cancel a write.
+
+    media_pool = call(project, "GetMediaPool")
+    original_folder = call(media_pool, "GetCurrentFolder")
     lanes = assign_track_lanes(frames)
     lane_count = max(lanes) + 1
-    inserted = []
-    generated_media = []
-    created_tracks = []
-    scratch = None
-    final_item = None
-    try:
-        call(media_pool, "SetCurrentFolder", generated_folder)
-        scratch = call(media_pool, "CreateEmptyTimeline", f"AMLL 临时 {int(time.time() * 1000)}")
-        if scratch is None:
-            raise HostError("无法创建歌词临时时间线")
-        if call(project, "SetCurrentTimeline", scratch, default=True) is False:
-            raise HostError("无法切换到歌词临时时间线")
-        for index, line in enumerate(lines):
-            generated_media.append(create_line_media(media_pool, scratch, line, frames[index], fps, index))
-        if call(project, "SetCurrentTimeline", timeline, default=True) is False:
-            raise HostError("无法切回原时间线")
-        old_track_count = int(call(timeline, "GetTrackCount", "video", default=0) or 0)
-        for lane in range(lane_count):
-            if call(timeline, "AddTrack", "video", default=True) is False:
-                raise HostError("无法创建新的顶部视频轨道")
-            track_index = old_track_count + lane + 1
-            created_tracks.append(track_index)
-            call(timeline, "SetTrackName", "video", track_index, TRACK_NAME if lane_count == 1 else f"{TRACK_NAME} {lane + 1}")
-        clip_infos = []
-        for index, media_item in enumerate(generated_media):
-            clip_infos.append({
-                "mediaPoolItem": media_item,
-                "startFrame": 0,
-                "endFrame": frames[index]["endFrameExclusive"] - frames[index]["startFrame"],
-                "mediaType": 1,
-                "trackIndex": old_track_count + lanes[index] + 1,
-                "recordFrame": frames[index]["startFrame"],
-            })
-        inserted = values(call(media_pool, "AppendToTimeline", clip_infos))
-        if len(inserted) != len(clip_infos):
-            raise HostError(f"只创建了 {len(inserted)}/{len(clip_infos)} 个歌词片段")
-        for index, item in enumerate(inserted):
-            expected = clip_infos[index]["endFrame"]
-            actual = int(call(item, "GetDuration", default=expected) or expected)
-            if actual != expected:
-                raise HostError(f"第 {index + 1} 行长度写入异常：期望 {expected} 帧，实际 {actual} 帧")
-        if job.get("render", {}).get("placementMode") == "fusion-clip":
-            final_item = call(timeline, "CreateFusionClip", inserted)
-            if final_item is None:
-                raise HostError("歌词已散落写入，但创建汇总 Fusion 片段失败")
-            call(final_item, "SetName", f"AMLL {as_text(job.get('document', {}).get('source', {}).get('title'), '歌词')}")
-            for track_index in sorted(created_tracks, reverse=True):
-                if not values(call(timeline, "GetItemListInTrack", "video", track_index)):
-                    call(timeline, "DeleteTrack", "video", track_index)
-        return {
-            "insertedCount": 1 if final_item is not None else len(inserted),
-            "sourceLineCount": len(inserted),
-            "createdTrackCount": 1 if final_item is not None else lane_count,
-            "timing": job.get("document", {}).get("timing", "line"),
-            "message": f"已写入 {len(inserted)} 行歌词。",
-        }
-    except Exception as error:
+    inserted, created_tracks = [], []
+    scratch, seed, final_item = None, None, None
+    with template_directory() as temporary:
+        template_path = Path(temporary) / "AM Lyrics.comp"
         try:
-            call(project, "SetCurrentTimeline", timeline)
-        except Exception:
-            pass
-        try:
-            if final_item is not None:
-                call(timeline, "DeleteClips", [final_item], False)
-            elif inserted:
-                call(timeline, "DeleteClips", inserted, False)
-        except Exception:
-            pass
-        try:
-            for track_index in sorted(created_tracks, reverse=True):
-                if not values(call(timeline, "GetItemListInTrack", "video", track_index)):
-                    call(timeline, "DeleteTrack", "video", track_index)
-        except Exception:
-            pass
-        try:
-            if scratch is not None:
-                call(media_pool, "DeleteTimelines", [scratch])
-        except Exception:
-            pass
-        try:
-            if generated_media:
-                call(media_pool, "DeleteClips", generated_media)
-        except Exception:
-            pass
-        if isinstance(error, HostError):
-            raise
-        raise HostError(str(error)) from error
-    finally:
-        try:
-            call(project, "SetCurrentTimeline", timeline)
-        except Exception:
-            pass
-        try:
-            if scratch is not None:
-                call(media_pool, "DeleteTimelines", [scratch])
-        except Exception:
-            pass
-        try:
-            call(media_pool, "SetCurrentFolder", original_folder)
-        except Exception:
-            pass
+            report("正在准备可复用标题源")
+            generated_folder = get_or_create_generated_folder(media_pool)
+            call(media_pool, "SetCurrentFolder", generated_folder)
+            scratch = call(media_pool, "CreateEmptyTimeline", f"AMLL 临时 {int(time.time() * 1000)}")
+            if scratch is None or call(project, "SetCurrentTimeline", scratch) is not True:
+                raise HostError("无法创建或切换到歌词准备时间线")
+            seed = create_title_seed(scratch, max(durations) + 1, template_path)
+            if call(project, "SetCurrentTimeline", timeline) is not True:
+                raise HostError("无法切回原时间线")
+            old_track_count = int(call(timeline, "GetTrackCount", "video", default=0) or 0)
+            for lane in range(lane_count):
+                if call(timeline, "AddTrack", "video") is not True:
+                    raise HostError("无法创建新的顶部视频轨道")
+                track_index = old_track_count + lane + 1
+                created_tracks.append(track_index)
+                call(timeline, "SetTrackName", "video", track_index, TRACK_NAME if lane_count == 1 else f"{TRACK_NAME} {lane + 1}")
+            clip_infos = [{"mediaPoolItem": seed, "startFrame": 0, "endFrame": durations[i], "mediaType": 1,
+                           "trackIndex": old_track_count + lanes[i] + 1, "recordFrame": frames[i]["startFrame"]}
+                          for i in range(len(lines))]
+            report("正在批量放置时间线片段")
+            inserted = values(call(media_pool, "AppendToTimeline", clip_infos))
+            if len(inserted) != len(lines):
+                raise HostError(f"只创建了 {len(inserted)}/{len(lines)} 个歌词片段")
+            for index, item in enumerate(inserted):
+                if call(item, "GetStart") != frames[index]["startFrame"] or call(item, "GetDuration") != durations[index]:
+                    raise HostError(f"第 {index + 1} 行位置或长度写入异常")
+                install_title_graph(item, template_path, dict(lines[index], _rangeLine=index + 1), fps)
+                report("正在写入顶层 Fusion 文字", index + 1)
+            if mode == "fusion-clip":
+                report("正在创建唯一的外层复合片段", len(lines))
+                name = "AMLL " + as_text(job.get("document", {}).get("source", {}).get("title"), "歌词")
+                final_item = call(timeline, "CreateCompoundClip", inserted, {"name": name})
+                if final_item is None:
+                    raise HostError("无法创建汇总复合片段")
+                for index in sorted(created_tracks, reverse=True):
+                    if not values(call(timeline, "GetItemListInTrack", "video", index)):
+                        call(timeline, "DeleteTrack", "video", index)
+            report("文字写入完成，正在整理", len(lines))
+            return {"insertedCount": 1 if final_item else len(inserted), "sourceLineCount": len(lines),
+                    "createdTrackCount": 1 if final_item else lane_count,
+                    "timing": job.get("document", {}).get("timing", "line"),
+                    "structure": "compound" if final_item else "top-level-fusion",
+                    "message": "每句文字均位于自身 Fusion 合成顶层，无逐句歌词嵌套。"}
+        except Exception as error:
+            try:
+                call(project, "SetCurrentTimeline", timeline)
+                if final_item is not None:
+                    call(timeline, "DeleteClips", [final_item], False)
+                elif inserted:
+                    call(timeline, "DeleteClips", inserted, False)
+                for index in sorted(created_tracks, reverse=True):
+                    if not values(call(timeline, "GetItemListInTrack", "video", index)):
+                        call(timeline, "DeleteTrack", "video", index)
+                if seed is not None:
+                    call(media_pool, "DeleteClips", [seed])
+            except Exception:
+                pass
+            raise HostError(f"{error}；已尝试回滚本次新增片段，请检查 AMLL 歌词轨道") from error
+        finally:
+            try:
+                call(project, "SetCurrentTimeline", timeline)
+                if scratch is not None:
+                    call(media_pool, "DeleteTimelines", [scratch])
+                call(media_pool, "SetCurrentFolder", original_folder)
+            except Exception:
+                pass
 
 
-def dispatch(resolve, action, args):
+def dispatch(resolve, action, args, progress=None):
     if action == "context":
         return context(resolve)["info"]
     if action == "titleSources":
         return title_sources(resolve)
     if action == "render":
-        return render(resolve, args.get("job") or {})
+        return render(resolve, args.get("job") or {}, progress=progress)
     raise HostError(f"不支持的脚本宿主操作：{action}")
 
 
@@ -453,6 +477,51 @@ class RpcHandler(BaseHTTPRequestHandler):
 
     def log_message(self, _format, *_args):
         return
+
+    def stream_render(self, args):
+        """Only network heartbeat writes use a thread; all Resolve calls stay serialized."""
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+        stopped, disconnected = threading.Event(), threading.Event()
+        lock = threading.Lock()
+        started = time.monotonic()
+
+        def emit(message):
+            if disconnected.is_set():
+                return
+            raw = (json.dumps(message, ensure_ascii=False) + "\n").encode("utf-8")
+            try:
+                with lock:
+                    self.wfile.write(raw)
+                    self.wfile.flush()
+            except OSError:
+                # A lost client must not turn a completed timeline write into a rollback.
+                disconnected.set()
+
+        def heartbeat():
+            while not stopped.wait(5):
+                emit({"type": "heartbeat", "elapsedSeconds": int(time.monotonic() - started)})
+
+        job = args.get("job") or {}
+        document = job.get("document") if isinstance(job, dict) else None
+        lines = document.get("lines") if isinstance(document, dict) else None
+        emit({"type": "progress", "data": {"stage": "已接收导入任务", "completed": 0,
+              "total": len(lines) if isinstance(lines, list) else 0}})
+        thread = threading.Thread(target=heartbeat, daemon=True)
+        thread.start()
+        try:
+            data = dispatch(self.server.resolve, "render", args,
+                            progress=lambda value: emit({"type": "progress", "data": value}))
+            result = {"ok": True, "data": data}
+        except Exception as error:
+            result = {"ok": False, "error": str(error)}
+        finally:
+            stopped.set()
+            thread.join()
+        emit(result)
 
     def do_POST(self):
         host = self.server
@@ -464,12 +533,15 @@ class RpcHandler(BaseHTTPRequestHandler):
             if length <= 0 or length > MAX_REQUEST_BYTES:
                 raise HostError("脚本宿主请求体大小无效")
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            if not isinstance(payload, dict) or not isinstance(payload.get("args", {}), dict):
+                raise HostError("脚本宿主请求格式无效")
+            if payload.get("action") == "render":
+                self.stream_render(payload.get("args") or {})
+                return
             data = dispatch(host.resolve, payload.get("action"), payload.get("args") or {})
-            response = {"ok": True, "data": data}
-            status = 200
+            response, status = {"ok": True, "data": data}, 200
         except Exception as error:
-            response = {"ok": False, "error": str(error)}
-            status = 400
+            response, status = {"ok": False, "error": str(error)}, 400
         raw = json.dumps(response, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")

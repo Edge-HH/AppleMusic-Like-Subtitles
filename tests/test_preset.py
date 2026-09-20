@@ -127,7 +127,7 @@ class PackageTests(unittest.TestCase):
                     script=value.Expression[1:] if value.Expression.startswith(':') else 'return '+value.Expression
                     lua.execute('assert(loadstring(...))',script)
         self.assertEqual(nodes.Glyph01.Inputs.End.Expression,'Controller.S01End/max(1,Controller.Count)')
-        self.assertIn('WordBounds01.Output.DataWindow',nodes.Reveal01.Inputs.NumberIn2.Expression)
+        self.assertIn('WordBounds01.Output',nodes.Reveal01.Inputs.NumberIn2.Expression)
         self.assertIn('Controller.S01Glow',nodes.Glow01.Inputs.Blend.Expression)
         self.assertEqual(nodes.Reveal01.Inputs.AlphaExpression.Value,'a1*i1*n7')
 
@@ -144,10 +144,10 @@ class PackageTests(unittest.TestCase):
         for locale in ('zh','en'):
             _,data=parse(build(locale));macro=data.Tools.AMLLyrics
             self.assertEqual(macro.UserControls.ResetDefaults.INPID_InputControl,'ButtonControl')
-            self.assertEqual(macro.UserControls.SetSegment.INPID_InputControl,'ButtonControl')
-            for removed in ('Softness','IdleBrightness','IdleBlur','ActiveBlur','SegmentCharacters','StartPosition','EndPosition'):
+            self.assertIsNone(macro.UserControls.SetSegment)
+            for removed in ('Softness','IdleBrightness','IdleBlur','ActiveBlur','SegmentCharacters','StartPosition','EndPosition','SegmentStart','SegmentEnd','SegmentStatus','SetSegment'):
                 self.assertIsNone(macro.Inputs[removed])
-            for key in ('Font','Style','Size','Center','FloatHeight','Glow','SegmentStart','SegmentEnd'):
+            for key in ('Font','Style','Size','Center','FloatHeight','Glow','WeightBoost','EnableSweep','EnableFloat','EnableEmphasis','EnableStagger','EnableGlow'):
                 self.assertIsNotNone(macro.Inputs[key])
 
     def action(self, name, values):
@@ -158,29 +158,94 @@ class PackageTests(unittest.TestCase):
         return lua.globals().inputs
 
     def test_reset_preserves_lyrics_and_schedule(self):
-        values=dict(DEFAULTS,Lyrics='你好',Timings='0-3',Duration=9,Offset=3,FPS=60,Glow=2,Font='Other',Size=.2,SegmentStart=2,SegmentEnd=2)
+        values=dict(DEFAULTS,Lyrics='你好',Timings='0-3',Duration=9,Offset=3,FPS=60,Glow=2,Font='Other',Size=.2,WeightBoost=0,EnableGlow=0,EnableFloat=0)
         result=self.action('ResetDefaults',values)
-        for key in ('Lyrics','Timings','Duration','Offset','FPS','SegmentStart','SegmentEnd'): self.assertEqual(result[key],values[key])
-        for key in ('Glow','Size','FloatHeight','IdleOpacity','ActiveOpacity'): self.assertEqual(result[key],DEFAULTS[key])
+        for key in ('Lyrics','Timings','Duration','Offset','FPS'): self.assertEqual(result[key],values[key])
+        for key in ('Glow','Size','FloatHeight','IdleOpacity','ActiveOpacity','WeightBoost','EnableGlow','EnableFloat'): self.assertEqual(result[key],DEFAULTS[key])
         self.assertEqual(result.Font,'Microsoft YaHei UI')
         self.assertEqual(result.Center[1],.5)
 
-    def test_split_preserves_existing_timing_and_gaps(self):
-        result=self.action('SetSegment',dict(Lyrics='abc|def',Timings='0-3|5-8',SegmentStart=2,SegmentEnd=5))
-        self.assertEqual(result.Lyrics,'a|bc|de|f')
-        self.assertEqual(result.Timings,'0.000000000-1.000000000|1.000000000-3.000000000|5.000000000-7.000000000|7.000000000-8.000000000')
-        self.assertTrue(evaluate('valid',Lyrics=result.Lyrics,Timings=result.Timings))
+    def test_completed_sweep_does_not_request_word_raster(self):
+        lua,data=parse(build())
+        lua.execute("Controller={S01Progress=1}; WordBounds01=setmetatable({}, {__index=function() error('unnecessary word raster') end})")
+        for key in ('NumberIn2','NumberIn3'):
+            lua.execute(data.Tools.AMLLyrics.Tools.Reveal01.Inputs[key].Expression[1:])
 
-    def test_invalid_selection_does_not_mutate_lyrics_or_timing(self):
-        for a,b in ((0,1),(3,2),(1,8),(1.5,2)):
-            result=self.action('SetSegment',dict(Lyrics='你|好',Timings='0-1|2-3',SegmentStart=a,SegmentEnd=b))
-            self.assertEqual(result.Lyrics,'你|好');self.assertEqual(result.Timings,'0-1|2-3')
-            self.assertIn('Invalid',result.SegmentStatus)
+    def test_effect_switches_disable_motion_and_reduce_slots(self):
+        fields=dict(Lyrics='你好',Timings='0-2',seconds=1)
+        self.assertEqual(evaluate('#units',EnableStagger=0,**fields),1)
+        for field,expected in [('lift',0),('scale',1),('dx',0),('glow',0)]:
+            self.assertEqual(evaluate('units[1].'+field,EnableFloat=0,EnableEmphasis=0,EnableGlow=0,**fields),expected)
 
-    def test_unicode_selection_accepts_number_wrappers(self):
-        result=self.action('SetSegment',dict(Lyrics='我想要留住',Timings='',SegmentStart={'Value':2},SegmentEnd={'Value':3}))
-        self.assertEqual(result.Lyrics,'我|想要|留住')
-        self.assertIn('想要',result.SegmentStatus)
+    def test_whole_word_reuses_glyph_bounds(self):
+        lua,data=parse(build())
+        lua.execute("""Controller={S01Progress=.5,EnableSweep=1,S01Index=1,S01End=2,S01WordFirst=1,S01WordLast=2}
+            Glyph01={Output={DataWindow={100,20,300,80},Width=1000}}
+            WordBounds01=setmetatable({}, {__index=function() error('duplicate raster') end})""")
+        for key,expected in [('NumberIn2',.1),('NumberIn3',.3)]:
+            self.assertEqual(lua.execute(data.Tools.AMLLyrics.Tools.Reveal01.Inputs[key].Expression[1:]),expected)
+
+    def test_staggered_characters_share_word_measurement(self):
+        lua,data=parse(build())
+        lua.execute("""Controller={S02Progress=.5,EnableSweep=1,S01WordFirst=1,S02WordFirst=1}
+            Reveal01={NumberIn2=.1,NumberIn3=.3}
+            WordBounds02=setmetatable({}, {__index=function() error('duplicate word raster') end})""")
+        for key,expected in [('NumberIn2',.1),('NumberIn3',.3)]:
+            self.assertEqual(lua.execute(data.Tools.AMLLyrics.Tools.Reveal02.Inputs[key].Expression[1:]),expected)
+
+    def test_disabled_and_future_sweeps_do_not_measure(self):
+        lua,data=parse(build())
+        for progress,enabled in [(0,1),(.5,0)]:
+            lua.globals().Controller=lua.table_from(dict(S01Progress=progress,EnableSweep=enabled))
+            for key in ('NumberIn2','NumberIn3'):
+                self.assertEqual(lua.execute(data.Tools.AMLLyrics.Tools.Reveal01.Inputs[key].Expression[1:]),0)
+
+    def test_weight_applies_to_visible_and_measurement_glyphs(self):
+        _,data=parse(build())
+        nodes=data.Tools.AMLLyrics.Tools
+        for name in ['SettledText','FutureText']+[f'{prefix}{i:02}' for prefix in ('Glyph','WordBounds') for i in range(1,SLOT_COUNT+1)]:
+            inputs=nodes[name].Inputs
+            self.assertEqual(inputs.Thickness2.Expression,'Controller.WeightBoost')
+            self.assertEqual(inputs.ElementShape2.Value,1)
+            self.assertEqual(inputs.Opacity1.Expression,inputs.Opacity2.Expression)
+            self.assertEqual(inputs.Opacity1.Value,inputs.Opacity2.Value)
+
+    def test_switches_are_checkboxes_and_zero_motion_bypasses_transform(self):
+        _,data=parse(build())
+        nodes=data.Tools.AMLLyrics.Tools
+        for key in ('EnableSweep','EnableFloat','EnableEmphasis','EnableStagger','EnableGlow'):
+            self.assertEqual(nodes.Controller.UserControls[key].INPID_InputControl,'CheckboxControl')
+        lua,_=parse(build())
+        lua.execute('Controller={S01Scale=1}')
+        lua.execute('function Point(x,y) return {x,y} end')
+        pivot=lua.execute(nodes.Motion01.Inputs.Pivot.Expression[1:])
+        self.assertEqual(pivot[1],.5)
+        self.assertIn('S01Lift==0',nodes.Motion01.Inputs.Blend.Expression)
+
+    def test_sweep_endpoints_and_disabled_mode(self):
+        lua,data=parse(build())
+        formula=data.Tools.AMLLyrics.Tools.Reveal01.Inputs.Intermediate1.Value.replace('if(', 'choose(')
+        lua.execute('function choose(c,a,b) if c then return a else return b end end; min=math.min; max=math.max')
+        for progress,enabled,expected in [(0,1,.4),(1,1,1),(.5,0,.4),(1,0,1)]:
+            for x in [0,.1,.5,.9,1]:
+                for key,value in dict(n1=progress,n2=0,n3=0,n4=.04,n5=.4,n6=1,n8=enabled,x=x).items():
+                    lua.globals()[key]=value
+                self.assertAlmostEqual(lua.execute('return '+formula),expected)
+        for progress in [.1,.3,.5,.9]:
+            for x in [.2,.4,.6,.8]:
+                for key,value in dict(n1=progress,n2=.2,n3=.8,n4=.04,n5=.4,n6=1,n8=1,x=x).items():
+                    lua.globals()[key]=value
+                old=.4+.6*min(1,max(0,(.2+progress*(.6+.04)-x)/.04))
+                self.assertAlmostEqual(lua.execute('return '+formula),old)
+
+    def test_glow_and_float_switches_are_independent(self):
+        fields=dict(Lyrics='你好',Timings='0-2',seconds=1)
+        self.assertEqual(evaluate('units[1].glow',EnableGlow=0,**fields),0)
+        self.assertGreater(evaluate('units[1].scale',EnableGlow=0,**fields),1)
+        self.assertEqual(evaluate('units[1].lift',EnableFloat=0,**fields),0)
+        self.assertGreater(evaluate('units[1].glow',EnableFloat=0,**fields),0)
+        self.assertGreater(evaluate('units[1].lift',EnableEmphasis=0,**fields),0)
+        self.assertEqual(evaluate('units[1].scale',EnableEmphasis=0,**fields),1)
 
     def test_dist_matches_source_and_archive_crc(self):
         for locale,label in [('zh','ZH'),('en','EN')]:

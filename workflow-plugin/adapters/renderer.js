@@ -1,4 +1,7 @@
 'use strict';
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
 
 const GENERATED_FOLDER = 'AMLL 歌词生成';
 const TRACK_NAME = 'AMLL 歌词';
@@ -27,7 +30,7 @@ function buildAmInputs(line, fps) {
     segments = [line.text];
     timings = [`0-${seconds(durationMs)}`];
   }
-  return { Lyrics: segments.join('|'), Timings: timings.join('|'), Duration: durationMs / 1000, Offset: 0, FPS: fps };
+  return { Lyrics: segments.join('|'), Timings: timings.join('|'), Duration: durationMs / 1000, Offset: 0, FPS: fps, ...(line.role === 'background' ? { BackgroundVocal: 1 } : {}) };
 }
 function assignTrackLanes(frames) {
   const laneEnds = [];
@@ -126,41 +129,36 @@ async function configureGenericTitle(item, line) {
   }
   throw new Error('所选媒体池 Fusion 标题中没有找到可写的 Text+ StyledText 输入');
 }
-async function clearScratchItem(timeline, item) {
-  if (item) await timeline.DeleteClips([item], false);
-  await timeline.ClearMarkInOut('video');
-}
-async function createLineMedia({ mediaPool, scratch, line, frame, titleSource, customSource, fps, index }) {
-  const durationFrames = frame.endFrameExclusive - frame.startFrame;
-  let sourceItem = null;
+async function createTitleSeed({ mediaPool, scratch, titleSource, customSource, durationFrames, templatePath }) {
+  let sourceItem;
   if (titleSource.startsWith('am-')) {
-    const preset = choosePreset({ ...line, _rangeLine: index + 1 });
-    await scratch.SetCurrentTimecode(await scratch.GetStartTimecode());
-    if (!await scratch.SetMarkInOut(0, durationFrames - 1, 'video')) throw new Error('无法设置临时时间线的标题长度');
-    sourceItem = await scratch.InsertFusionTitleIntoTimeline(preset);
-    if (!sourceItem) throw new Error(`找不到 Fusion 标题“${preset}”，请先安装仓库生成的标题预设`);
-    await configureAmTitle(sourceItem, { ...line, _rangeLine: index + 1 }, fps);
+    if (!await scratch.SetMarkInOut(0, durationFrames - 1, 'video')) throw new Error('无法设置标题源长度');
+    sourceItem = await scratch.InsertFusionTitleIntoTimeline('AM Lyrics');
   } else {
-    const appended = values(await mediaPool.AppendToTimeline([{
-      mediaPoolItem: customSource,
-      startFrame: 0,
-      endFrame: durationFrames,
-      mediaType: 1,
-      trackIndex: 1,
-      recordFrame: await scratch.GetStartFrame(),
-    }]));
-    sourceItem = appended[0];
-    if (!sourceItem || Number(await sourceItem.GetDuration()) < durationFrames) throw new Error(`所选媒体池 Fusion 标题不足以覆盖第 ${index + 1} 行的时长`);
-    await configureGenericTitle(sourceItem, line);
+    sourceItem = values(await mediaPool.AppendToTimeline([{ mediaPoolItem: customSource, startFrame: 0, endFrame: durationFrames,
+      mediaType: 1, trackIndex: 1, recordFrame: await scratch.GetStartFrame() }]))[0];
   }
-  const fusionItem = await scratch.CreateFusionClip([sourceItem]);
-  if (!fusionItem) throw new Error(`无法为第 ${index + 1} 行创建 Fusion 片段`);
-  const mediaItem = await fusionItem.GetMediaPoolItem();
-  if (!mediaItem) throw new Error(`第 ${index + 1} 行的 Fusion 片段没有生成媒体池项目`);
-  const shortText = line.text.replace(/\s+/g, ' ').slice(0, 36) || `第 ${index + 1} 行`;
-  try { await mediaItem.SetClipProperty('Clip Name', `${String(index + 1).padStart(3, '0')} ${shortText}`); } catch { /* 命名失败不影响内容。 */ }
-  await clearScratchItem(scratch, fusionItem);
-  return mediaItem;
+  if (!sourceItem || !await sourceItem.ExportFusionComp(templatePath, 1)) throw new Error('无法导出现有标题节点');
+  if (!titleSource.startsWith('am-')) return customSource;
+  const comp = await compForItem(sourceItem);
+  const macro = comp && await comp.FindTool('AMLLyrics');
+  if (!macro) throw new Error('标题缺少 AMLLyrics 控制器');
+  await macro.SetInput('Lyrics', '');
+  const carrier = await scratch.CreateFusionClip([sourceItem]);
+  const seed = carrier && await carrier.GetMediaPoolItem();
+  if (!seed) throw new Error('无法建立可复用的 Fusion 定位源');
+  await seed.SetClipProperty('Clip Name', 'AMLL 标题定位源（共享，不含歌词）');
+  return seed;
+}
+async function installTitleGraph(item, templatePath, line, fps, builtIn) {
+  const previous = values(await item.GetFusionCompNameList());
+  if (!await item.ImportFusionComp(templatePath)) throw new Error('无法直接写入标题节点');
+  const added = values(await item.GetFusionCompNameList()).filter(name => !previous.includes(name));
+  if (added.length !== 1 || !await item.LoadFusionCompByName(added[0])) throw new Error('无法激活标题合成');
+  for (const name of previous) if (!await item.DeleteFusionCompByName(name)) throw new Error('无法清除旧包装合成');
+  if (builtIn) await configureAmTitle(item, line, fps);
+  else await configureGenericTitle(item, line);
+  await item.SetName(line.text.slice(0, 80) || 'AM Lyrics');
 }
 async function timelineIdentity(timeline) {
   const name = String(await timeline.GetName());
@@ -187,86 +185,75 @@ module.exports = {
       mediaPool: await scanFusionItems(root),
     };
   },
-  async render({ job, project, timeline }) {
+  async render({ job, project, timeline, onProgress }) {
     if (job?.schemaVersion !== 2 || job?.kind !== 'amll.resolve.render-job') throw new Error('渲染任务版本不受支持，请重新生成任务');
-    if (!job.document?.lines?.length || job.document.lines.length !== job.placement?.lineFrames?.length) throw new Error('歌词任务行数与帧区间不一致');
+    const lines = job.document?.lines, frames = job.placement?.lineFrames;
+    if (!lines?.length || lines.length !== frames?.length) throw new Error('歌词任务行数与帧区间不一致');
     const identity = await timelineIdentity(timeline);
     if (identity.id !== String(job.placement.timelineId)) throw new Error('当前时间线已变化，请刷新连接后重新导入');
-    const mediaPool = await project.GetMediaPool();
-    const originalFolder = await mediaPool.GetCurrentFolder();
-    const generatedFolder = await getOrCreateGeneratedFolder(mediaPool);
-    const titleSource = job.render.titleSource;
+    const titleSource = job.render.titleSource, builtIn = titleSource.startsWith('am-');
+    const fps = job.placement.frameRate.numerator / job.placement.frameRate.denominator;
+    const durations = frames.map((frame, i) => {
+      if (!Number.isSafeInteger(frame.startFrame) || !Number.isSafeInteger(frame.endFrameExclusive) || frame.endFrameExclusive <= frame.startFrame) throw new Error(`第 ${i + 1} 行帧区间无效`);
+      if (builtIn) { choosePreset(lines[i]); buildAmInputs(lines[i], fps); }
+      return frame.endFrameExclusive - frame.startFrame;
+    });
+    const report = (stage, completed = 0) => { try { onProgress?.({ stage, completed, total: lines.length }); } catch { /* UI closure must not cancel a write. */ } };
+    const mediaPool = await project.GetMediaPool(), originalFolder = await mediaPool.GetCurrentFolder();
     let customSource = null;
-    if (titleSource.startsWith('media:')) {
+    if (!builtIn) {
       customSource = await findMediaItem(await mediaPool.GetRootFolder(), titleSource.slice(6));
       if (!customSource) throw new Error('所选媒体池 Fusion 标题已移动或删除，请刷新标题列表');
     }
-    const fps = job.placement.frameRate.numerator / job.placement.frameRate.denominator;
-    const lanes = assignTrackLanes(job.placement.lineFrames);
-    const laneCount = Math.max(...lanes) + 1;
-    const inserted = [];
-    const generatedMedia = [];
-    const createdTracks = [];
-    let scratch = null, finalItem = null;
+    const lanes = assignTrackLanes(frames), laneCount = Math.max(...lanes) + 1;
+    const inserted = [], createdTracks = [];
+    let scratch = null, seed = null, finalItem = null;
+    const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'amll-title-'));
+    const templatePath = path.join(temporary, 'AM Lyrics.comp');
     try {
-      await mediaPool.SetCurrentFolder(generatedFolder);
+      report('正在准备可复用标题源');
+      await mediaPool.SetCurrentFolder(await getOrCreateGeneratedFolder(mediaPool));
       scratch = await mediaPool.CreateEmptyTimeline(`AMLL 临时 ${Date.now()}`);
-      if (!scratch) throw new Error('无法创建歌词临时时间线');
-      await project.SetCurrentTimeline(scratch);
-      for (let i = 0; i < job.document.lines.length; i++) {
-        generatedMedia.push(await createLineMedia({ mediaPool, scratch, line: job.document.lines[i], frame: job.placement.lineFrames[i], titleSource, customSource, fps, index: i }));
-      }
-      await project.SetCurrentTimeline(timeline);
+      if (!scratch || !await project.SetCurrentTimeline(scratch)) throw new Error('无法创建歌词准备时间线');
+      seed = await createTitleSeed({ mediaPool, scratch, titleSource, customSource, durationFrames: Math.max(...durations) + 1, templatePath });
+      if (!await project.SetCurrentTimeline(timeline)) throw new Error('无法切回原时间线');
       const oldTrackCount = Number(await timeline.GetTrackCount('video'));
       for (let lane = 0; lane < laneCount; lane++) {
         if (!await timeline.AddTrack('video')) throw new Error('无法创建新的顶部视频轨道');
-        const index = oldTrackCount + lane + 1;
-        createdTracks.push(index);
+        const index = oldTrackCount + lane + 1; createdTracks.push(index);
         await timeline.SetTrackName('video', index, laneCount === 1 ? TRACK_NAME : `${TRACK_NAME} ${lane + 1}`);
       }
-      const clipInfos = generatedMedia.map((mediaPoolItem, i) => ({
-        mediaPoolItem,
-        startFrame: 0,
-        endFrame: job.placement.lineFrames[i].endFrameExclusive - job.placement.lineFrames[i].startFrame,
-        mediaType: 1,
-        trackIndex: oldTrackCount + lanes[i] + 1,
-        recordFrame: job.placement.lineFrames[i].startFrame,
-      }));
-      inserted.push(...values(await mediaPool.AppendToTimeline(clipInfos)));
-      if (inserted.length !== clipInfos.length) throw new Error(`只创建了 ${inserted.length}/${clipInfos.length} 个歌词片段`);
+      report('正在批量放置时间线片段');
+      inserted.push(...values(await mediaPool.AppendToTimeline(frames.map((frame, i) => ({ mediaPoolItem: seed,
+        startFrame: 0, endFrame: durations[i], mediaType: 1, trackIndex: oldTrackCount + lanes[i] + 1, recordFrame: frame.startFrame })))));
+      if (inserted.length !== lines.length) throw new Error(`只创建了 ${inserted.length}/${lines.length} 个歌词片段`);
       for (let i = 0; i < inserted.length; i++) {
-        const expected = clipInfos[i].endFrame;
-        const actual = Number(await inserted[i].GetDuration());
-        if (actual !== expected) throw new Error(`第 ${i + 1} 行长度写入异常：期望 ${expected} 帧，实际 ${actual} 帧`);
+        if (Number(await inserted[i].GetDuration()) !== durations[i] || Number(await inserted[i].GetStart()) !== frames[i].startFrame) throw new Error(`第 ${i + 1} 行位置或长度写入异常`);
+        await installTitleGraph(inserted[i], templatePath, { ...lines[i], _rangeLine: i + 1 }, fps, builtIn);
+        report('正在写入顶层 Fusion 文字', i + 1);
       }
       if (job.render.placementMode === 'fusion-clip') {
-        finalItem = await timeline.CreateFusionClip(inserted);
-        if (!finalItem) throw new Error('歌词已散落写入，但创建汇总 Fusion 片段失败');
-        await finalItem.SetName(`AMLL ${job.document.source?.title || '歌词'}`);
+        report('正在创建唯一的外层复合片段', lines.length);
+        finalItem = await timeline.CreateCompoundClip(inserted, { name: `AMLL ${job.document.source?.title || '歌词'}` });
+        if (!finalItem) throw new Error('无法创建汇总复合片段');
         await deleteEmptyCreatedTracks(timeline, createdTracks);
       }
-      if (scratch) {
-        await project.SetCurrentTimeline(timeline);
-        await mediaPool.DeleteTimelines([scratch]);
-        scratch = null;
-      }
-      await mediaPool.SetCurrentFolder(originalFolder);
-      const degraded = !titleSource.startsWith('am-');
-      return {
-        insertedCount: finalItem ? 1 : inserted.length,
-        sourceLineCount: inserted.length,
-        createdTrackCount: finalItem ? 1 : laneCount,
-        timing: degraded ? 'line' : job.document.timing,
-        message: degraded ? '已使用媒体池 Fusion 标题按逐行方式导入；不会伪造逐字动画。' : `已写入 ${inserted.length} 行歌词。`,
-      };
+      report('文字写入完成，正在整理', lines.length);
+      return { insertedCount: finalItem ? 1 : inserted.length, sourceLineCount: lines.length, createdTrackCount: finalItem ? 1 : laneCount,
+        structure: finalItem ? 'compound' : 'top-level-fusion', timing: builtIn ? job.document.timing : 'line',
+        message: builtIn ? '每句文字均位于自身 Fusion 合成顶层，无逐句歌词嵌套。' : '已使用媒体池标题逐行导入，文字位于各片段顶层。' };
     } catch (error) {
-      try { await project.SetCurrentTimeline(timeline); } catch { /* 保留原错误。 */ }
-      try { if (finalItem) await timeline.DeleteClips([finalItem], false); else if (inserted.length) await timeline.DeleteClips(inserted, false); } catch { /* 回滚尽力而为。 */ }
-      try { await deleteEmptyCreatedTracks(timeline, createdTracks); } catch { /* 回滚尽力而为。 */ }
-      try { if (scratch) await mediaPool.DeleteTimelines([scratch]); } catch { /* 回滚尽力而为。 */ }
-      try { if (generatedMedia.length) await mediaPool.DeleteClips(generatedMedia); } catch { /* 回滚尽力而为。 */ }
-      try { await mediaPool.SetCurrentFolder(originalFolder); } catch { /* 保留原错误。 */ }
-      throw new Error(`${error.message}${inserted.length ? `；已尝试回滚 ${inserted.length} 个已写入片段，请检查“${TRACK_NAME}”轨道` : ''}`);
+      try { await project.SetCurrentTimeline(timeline); } catch { /* Preserve original failure. */ }
+      try { if (finalItem) await timeline.DeleteClips([finalItem], false); else if (inserted.length) await timeline.DeleteClips(inserted, false); } catch { /* Best-effort rollback of new items only. */ }
+      try { await deleteEmptyCreatedTracks(timeline, createdTracks); } catch { /* Do not touch existing tracks. */ }
+      try { if (seed && builtIn) await mediaPool.DeleteClips([seed]); } catch { /* Never delete a user's custom template. */ }
+      throw new Error(`${error.message}；已尝试回滚本次新增片段，请检查 AMLL 歌词轨道`);
+    } finally {
+      try { await project.SetCurrentTimeline(timeline); if (scratch) await mediaPool.DeleteTimelines([scratch]); await mediaPool.SetCurrentFolder(originalFolder); } catch { /* Cleanup must not replace the write result. */ }
+      const resolved = path.resolve(temporary);
+      if (path.dirname(resolved) === path.resolve(os.tmpdir()) && path.basename(resolved).startsWith('amll-title-')) {
+        try { await fs.rm(resolved, { recursive: true, force: true }); } catch { /* A cleanup failure is not an import failure. */ }
+      }
     }
   },
   __test: { values, choosePreset, buildAmInputs, assignTrackLanes },

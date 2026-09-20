@@ -1,17 +1,18 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const names = { amll: 'AMLL TTML', netease: '网易云平台', qq: 'QQ 音乐平台', local: '本地文件', paste: '粘贴内容' };
-let selected = null, status = null, busy = false;
+let selected = null, status = null, busy = false, importInProgress = false;
 function setMessage(text) { $('message').textContent = text; }
 function warnings(items = []) {
   $('warnings').replaceChildren(...items.map(text => { const li = document.createElement('li'); li.textContent = text; return li; }));
 }
 function controls() {
   document.querySelectorAll('button,input,select,textarea').forEach(control => { control.disabled = busy; });
+  $('wordSeparator').disabled = busy || $('joinerMode').value !== 'custom';
   $('startFrame').disabled = busy || $('anchor').value !== 'frame';
   $('rangeStartLine').disabled = busy || !selected;
   $('rangeEndLine').disabled = busy || !selected;
-  $('render').disabled = busy || !selected || !status?.renderer.available || !status?.timeline;
+  $('render').disabled = busy || !selected || !status?.renderer?.available || !status?.timeline;
   $('exportJson').disabled = busy || !selected || !status?.timeline;
   $('exportSrt').disabled = busy || !selected;
 }
@@ -42,13 +43,14 @@ function updateRangePreview() {
   const start = selected.lines[first - 1], end = selected.lines[last - 1];
   $('rangeSummary').textContent = `将导入第 ${first}–${last} 行，共 ${last - first + 1} 行；范围 ${time(start.startMs)} → ${time(end.endMs)}，第一行对齐插入起点。`;
 }
-function showDocument(doc) {
-  selected = doc;
-  $('songTitle').textContent = doc.source.title || doc.metadata?.ti || doc.metadata?.musicName?.join(' / ') || '导入的歌词';
-  $('sourceInfo').textContent = [names[doc.source.provider] || doc.source.provider, { word: '逐字时间戳', line: '逐行时间戳', mixed: '逐字与逐行混合' }[doc.timing], `${doc.lines.length} 行`, doc.source.authors?.length ? `歌词作者：${doc.source.authors.join('、')}` : '', doc.source.encoding ? `编码：${doc.source.encoding}` : ''].filter(Boolean).join(' · ');
+function joinerSettings() {
+  return { joinerMode: $('joinerMode').value || 'auto', wordSeparator: $('wordSeparator').value };
+}
+function renderLyricPreview(doc) {
   const fragment = document.createDocumentFragment();
   // 限制一次 DOM 构建规模；导出和渲染仍使用完整歌词文档。
-  for (const [index, item] of doc.lines.slice(0, 1000).entries()) {
+  for (const [index, raw] of doc.lines.slice(0, 1000).entries()) {
+    const item = window.amllTextFormatting.formatLine(raw, joinerSettings());
     const row = document.createElement('div'); row.className = 'lyric-line'; row.dataset.line = index + 1;
     const clock = document.createElement('time'); clock.textContent = `第 ${index + 1} 行 · ${time(item.startMs)} → ${time(item.endMs)}${item.role === 'background' ? ' · 和声' : ''}${item.agent ? ` · ${item.agent}` : ''}`;
     const text = document.createElement('p');
@@ -62,6 +64,12 @@ function showDocument(doc) {
     fragment.append(row);
   }
   $('preview').replaceChildren(fragment);
+}
+function showDocument(doc) {
+  selected = doc;
+  $('songTitle').textContent = doc.source.title || doc.metadata?.ti || doc.metadata?.musicName?.join(' / ') || '导入的歌词';
+  $('sourceInfo').textContent = [names[doc.source.provider] || doc.source.provider, { word: '逐字时间戳', line: '逐行时间戳', mixed: '逐字与逐行混合' }[doc.timing], `${doc.lines.length} 行`, doc.source.authors?.length ? `歌词作者：${doc.source.authors.join('、')}` : '', doc.source.encoding ? `编码：${doc.source.encoding}` : ''].filter(Boolean).join(' · ');
+  renderLyricPreview(doc);
   $('rangeStartLine').max = doc.lines.length; $('rangeEndLine').max = doc.lines.length;
   $('rangeStartLine').value = 1; $('rangeEndLine').value = doc.lines.length;
   updateRangePreview();
@@ -105,12 +113,36 @@ async function refreshTitleSources() {
   if (!result.mediaPool.length) mediaGroup.label += '（未找到）';
 }
 async function refreshHost() {
-  status = await command('status');
-  $('hostStatus').className = `banner${status.hostError ? ' error' : ''}`;
-  $('hostStatus').textContent = status.hostError || `已连接时间线：${status.timeline.name} · ${(status.timeline.frameRate.numerator / status.timeline.frameRate.denominator).toFixed(3)} fps · 播放头 ${status.timeline.currentTimecode}`;
-  $('rendererStatus').textContent = status.renderer.available ? '时间线写入模块已连接：将先生成独立 Fusion 源，再精确写入顶部新轨道，不会波纹移动原有剪辑。' : status.renderer.reason;
-  if (status.timeline) { $('startFrame').value = status.timeline.startFrame; await refreshTitleSources(); }
-  setMessage('连接状态已更新。');
+  // Discard stale readiness before reconnecting. A failed refresh must not leave
+  // old write controls enabled or a permanent "checking" banner on screen.
+  status = null;
+  $('hostStatus').className = 'banner';
+  $('hostStatus').textContent = '正在检查连接…';
+  $('rendererStatus').textContent = '正在检查时间线写入模块…';
+  try {
+    const next = await command('status');
+    if (next?.hostError) throw new Error(next.hostError);
+    const timeline = next?.timeline;
+    const rate = timeline?.frameRate;
+    if (!timeline || typeof timeline.name !== 'string'
+      || !Number.isFinite(rate?.numerator) || rate.numerator <= 0
+      || !Number.isFinite(rate?.denominator) || rate.denominator <= 0
+      || typeof next?.renderer?.available !== 'boolean') {
+      throw new Error('未取得完整的时间线连接信息，请在达芬奇打开时间线后刷新连接');
+    }
+    status = next;
+    $('hostStatus').textContent = `已连接时间线：${timeline.name} · ${(rate.numerator / rate.denominator).toFixed(3)} fps · 播放头 ${timeline.currentTimecode}`;
+    $('rendererStatus').textContent = status.renderer.available ? '时间线写入模块已连接：批量放置顶层可编辑的 Fusion 文字，不再逐句嵌套；原有剪辑不会波纹移动。' : status.renderer.reason || '当前时间线写入模块不可用';
+    $('startFrame').value = timeline.startFrame;
+    await refreshTitleSources();
+    setMessage('连接状态已更新。');
+  } catch (error) {
+    status = null;
+    $('hostStatus').className = 'banner error';
+    $('hostStatus').textContent = error.message || '连接检查失败';
+    $('rendererStatus').textContent = '时间线连接检查失败，暂不能写入；请按上方提示处理后刷新连接。';
+    throw error;
+  }
 }
 $('refreshHost').addEventListener('click', () => run('正在检查连接…', refreshHost));
 $('refreshTitles').addEventListener('click', () => run('正在扫描媒体池 Fusion 标题…', async () => { await refreshTitleSources(); setMessage('Fusion 标题列表已刷新。'); }));
@@ -125,11 +157,18 @@ $('searchForm').addEventListener('submit', event => {
 $('importFile').addEventListener('click', () => run('请选择歌词文件…', async () => { const result = await command('importFile', { encoding: $('encoding').value }); if (result.document) showDocument(result.document); else setMessage('已取消导入。'); }));
 $('parsePaste').addEventListener('click', () => run('正在解析…', async () => showDocument((await command('parsePaste', { text: $('pasteText').value, format: $('pasteFormat').value })).document)));
 $('anchor').addEventListener('change', controls);
+for (const id of ['joinerMode', 'wordSeparator']) {
+  $(id).addEventListener('change', () => run('正在更新连接符预览…', async () => {
+    window.amllTextFormatting.options(joinerSettings());
+    if (selected) { renderLyricPreview(selected); updateRangePreview(); }
+    setMessage('连接符设置已更新；预览、导出和导入将使用同一规则。');
+  }));
+}
 $('rangeStartLine').addEventListener('change', updateRangePreview); $('rangeEndLine').addEventListener('change', updateRangePreview);
 $('titleSource').addEventListener('change', () => { if ($('titleSource').value.startsWith('media:')) setMessage('已选择媒体池 Fusion 标题：导入时会降级为逐行歌词，不会伪造逐字时间。'); });
 function settings() {
   const { first, last } = normalizedRange();
-  return { anchor: $('anchor').value, startFrame: Number($('startFrame').value), offsetMs: Number($('offsetMs').value), rangeStartLine: first, rangeEndLine: last, placementMode: $('placementMode').value, titleSource: $('titleSource').value };
+  return { anchor: $('anchor').value, startFrame: Number($('startFrame').value), offsetMs: Number($('offsetMs').value), rangeStartLine: first, rangeEndLine: last, placementMode: $('placementMode').value, titleSource: $('titleSource').value, ...joinerSettings() };
 }
 for (const [id, format] of [['exportJson', 'json'], ['exportSrt', 'srt']]) {
   $(id).addEventListener('click', () => run('准备导出…', async () => {
@@ -137,8 +176,17 @@ for (const [id, format] of [['exportJson', 'json'], ['exportSrt', 'srt']]) {
     setMessage(result.canceled ? '已取消导出。' : `已导出：${result.path}${format === 'srt' ? '\n普通 SRT 不包含逐字动画和 Fusion 样式，仅应用所选范围与歌词偏移。' : '\n这是与当前导入设置一致的渲染任务文件。'}`);
   }));
 }
-$('render').addEventListener('click', () => run('正在生成 Fusion 歌词并写入顶部新轨道，请勿切换项目或时间线…', async () => {
-  const result = await command('render', { settings: settings() });
-  setMessage(`已从 ${result.sourceLineCount} 行歌词创建 ${result.insertedCount} 个时间线片段，占用 ${result.createdTrackCount} 条顶部新轨道。${result.message || ''}`);
+window.lyricsAPI?.onRenderProgress?.(progress => {
+  if (!importInProgress) return;
+  const count = Number.isFinite(progress?.completed) && Number.isFinite(progress?.total) && progress.total > 0 ? `（${progress.completed}/${progress.total} 行）` : '';
+  const elapsed = Number.isFinite(progress?.elapsedSeconds) ? ` · 已用时 ${progress.elapsedSeconds} 秒` : '';
+  setMessage(`${progress?.stage || '宿主正在处理导入，请勿重复操作'}${count}${elapsed}`);
+});
+$('render').addEventListener('click', () => run('正在导入顶层 Fusion 文字，请勿切换项目或时间线…', async () => {
+  importInProgress = true;
+  try {
+    const result = await command('render', { settings: settings() });
+    setMessage(`已从 ${result.sourceLineCount} 行歌词创建 ${result.insertedCount} 个时间线片段，占用 ${result.createdTrackCount} 条顶部新轨道。${result.message || ''}`);
+  } finally { importInProgress = false; }
 }));
 run('正在检查达芬奇连接…', refreshHost);
