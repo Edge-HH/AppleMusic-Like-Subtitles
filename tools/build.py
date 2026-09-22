@@ -9,9 +9,9 @@ RUNTIME = (ROOT / 'src/timing.lua').read_text(encoding='utf-8-sig')
 MAX_CHARACTERS = 256
 SLOT_COUNT = 16
 DEFAULTS = dict(Duration=4, Offset=0, FPS=0, FadeWidth=.5, IdleOpacity=.4,
-                ActiveOpacity=1, OverallOpacity=1, FloatHeight=.05, FloatDuration=1,
+                ActiveOpacity=1, OverallOpacity=1, FloatHeight=.035, FloatDuration=1,
                 Emphasis=1, EmphasisDuration=1, Glow=1, LastWordBoost=1, BackgroundVocal=0,
-                Size=.075, CharacterSpacing=1, LineSpacing=1, Red1=1, Green1=1, Blue1=1,
+                Size=.075, CharacterSpacing=1.04, LineSpacing=1, Red1=1, Green1=1, Blue1=1,
                 WeightBoost=.006, EnableSweep=1, EnableFloat=1, EnableEmphasis=1, EnableStagger=1, EnableGlow=1)
 LABELS = {
     'zh': dict(Lyrics='歌词（用 | 分词）', Timings='分词时间（开始-结束秒，可留空）', Duration='自动唱完秒数',
@@ -141,7 +141,7 @@ def build(locale='zh', lyrics='我|想要|留住|这一刻', timings='', font=No
             ctrl[key]=inp(expression=state_field(slot,col))
     ctrl.update(StyledText=inp(expression=':local s=Controller.Lyrics; if type(s)~="string" then s=s.Value end; return s:gsub("|", ""):gsub("\\r\\n", "\\n"):gsub("\\r", "\\n")'),
         Font=inp(font), Style=inp(style), Center=inp([.5,.54]), Size=inp(DEFAULTS['Size']),
-        CharacterSpacing=inp(1), LineSpacing=inp(1), Red1=inp(1), Green1=inp(1), Blue1=inp(1),
+        CharacterSpacing=inp(DEFAULTS['CharacterSpacing']), LineSpacing=inp(1), Red1=inp(1), Green1=inp(1), Blue1=inp(1),
         Opacity1=inp(0),UseFrameFormatSettings=inp(1),Width=inp(1920),Height=inp(1080))
     common = dict(StyledText=inp(expression='Controller.StyledText'),Font=inp(expression='Controller.Font'),
         Style=inp(expression='Controller.Style'),Size=inp(expression='Controller.Size'),Center=inp(expression='Controller.Center'),

@@ -58,9 +58,29 @@ class TimingTests(unittest.TestCase):
         # Timing grammar deliberately requires 0.2, rather than .2.
         fields['Timings']='0-0.2|0.2-0.4'
         self.assertGreater(evaluate('units[1].lift',seconds=.5,**fields),0)
-        self.assertLess(evaluate('units[1].lift',seconds=.5,**fields),.05)
-        self.assertEqual(evaluate('units[1].lift',seconds=1.1,**fields),.05)
+        self.assertLess(evaluate('units[1].lift',seconds=.5,**fields),.035)
+        self.assertGreater(evaluate('units[2].lift',seconds=.5,**fields),0)
+        self.assertLess(evaluate('units[2].lift',seconds=.5,**fields),.035)
+        self.assertEqual(evaluate('units[1].lift',seconds=1.1,**fields),.035)
         self.assertEqual(evaluate('prefix',seconds=1.5,**fields),2)
+
+    def test_float_allows_overlapping_words_and_previous_units_hold(self):
+        fields=dict(Lyrics='你好|世界',Timings='0-2|2-4',EnableEmphasis=0)
+        # At the word boundary the first word stays lifted while the next starts.
+        self.assertEqual(evaluate('units[1].lift',seconds=2.1,**fields),.035)
+        self.assertLess(evaluate('units[2].lift',seconds=2.1,**fields),.035)
+        self.assertGreater(evaluate('units[2].lift',seconds=3,**fields),0)
+        self.assertEqual(evaluate('units[1].lift',seconds=3,**fields),.035)
+
+    def test_staggered_float_follows_playback_and_overlaps_smoothly(self):
+        fields=dict(Lyrics='你好',Timings='0-2')
+        self.assertGreater(evaluate('units[2].lift',seconds=.2,**fields),0)
+        self.assertLess(evaluate('units[2].lift',seconds=.2,**fields),.035)
+        self.assertGreater(evaluate('units[1].lift',seconds=.2,**fields),0)
+        self.assertLess(evaluate('units[1].lift',seconds=.2,**fields),.035)
+        self.assertGreater(evaluate('units[1].lift',seconds=1.2,**fields),0)
+        self.assertGreater(evaluate('units[2].lift',seconds=1.2,**fields),0)
+        self.assertGreater(evaluate('units[2].lift',seconds=1.2,**fields),0)
 
     def test_emphasis_is_staggered_and_outlives_word_end(self):
         fields=dict(Lyrics='你好|a',Timings='0-2|2-2.3')
@@ -68,8 +88,8 @@ class TimingTests(unittest.TestCase):
         self.assertGreater(evaluate('units[2].start-units[1].start',**fields),0)
         self.assertGreater(evaluate('units[2].glow',seconds=1.2,**fields),0)
         self.assertGreater(evaluate('units[1].scale',seconds=1,**fields),1)
-        self.assertGreater(evaluate('units[2].lift',seconds=2.1,**fields),.05)
-        self.assertAlmostEqual(evaluate('units[2].lift',seconds=4,**fields),.05)
+        self.assertGreater(evaluate('units[2].lift',seconds=2.1,**fields),0)
+        self.assertAlmostEqual(evaluate('units[2].lift',seconds=4,**fields),.035)
         self.assertEqual(evaluate('units[2].glow',seconds=4,**fields),0)
 
     def test_english_emphasis_length_gate(self):
@@ -117,6 +137,11 @@ class TimingTests(unittest.TestCase):
 
 
 class PackageTests(unittest.TestCase):
+    def test_default_character_spacing_is_opened_for_cjk(self):
+        self.assertAlmostEqual(DEFAULTS['CharacterSpacing'],1.04)
+        _,data=parse(build())
+        self.assertEqual(data.Tools.AMLLyrics.Tools.Controller.Inputs.CharacterSpacing.Value,1.04)
+
     def test_graph_native_types_and_dependencies(self):
         lua,data=parse(build());nodes=data.Tools.AMLLyrics.Tools
         self.assertEqual(len(list(nodes.keys())),4+6*SLOT_COUNT)

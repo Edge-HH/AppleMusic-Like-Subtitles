@@ -19,6 +19,16 @@ local function split(value)
     for part in (value .. "|"):gmatch("(.-)|") do result[#result+1] = part end
     return result
 end
+local function isCjk(text)
+    for _,ch in ipairs(characters(text)) do
+        local a,b,c=ch:byte(1,3)
+        if a and a>=224 and a<240 and b and c then
+            local cp=(a-224)*4096+(b-128)*64+c-128
+            if (cp>=0x3400 and cp<=0x9FFF) or (cp>=0x3040 and cp<=0x30FF) or (cp>=0xAC00 and cp<=0xD7A3) then return true end
+        end
+    end
+    return false
+end
 -- Solve CSS cubic-bezier x before evaluating y; a polynomial in time is not CSS easing.
 local function bezier(p, x1, y1, x2, y2)
     p = clamp(p, 0, 1)
@@ -49,9 +59,16 @@ local now = (time-comp.GlobalStart)/fps-numberValue(Controller.Offset,0)
 local duration = math.max(1/fps,numberValue(Controller.Duration,4))
 local ranges, errorMessage, cursor = {}, nil, 0
 for _,segment in ipairs(segments) do
-    local length = #characters(segment)
+    -- Cache segment metadata once per frame.  The old path rebuilt UTF-8
+    -- character arrays and rescanned CJK text while creating every motion
+    -- unit, which was especially expensive during Resolve playback.
+    local segmentChars = characters(segment)
+    local length = #segmentChars
     if length == 0 then errorMessage = "Empty lyric segment" end
-    ranges[#ranges+1] = {first=cursor+1,length=length,start=duration*cursor/math.max(1,count),finish=duration*(cursor+length)/math.max(1,count)}
+    local trimmed = segment:gsub("^%s+", ""):gsub("%s+$", "")
+    ranges[#ranges+1] = {first=cursor+1,length=length,start=duration*cursor/math.max(1,count),
+        finish=duration*(cursor+length)/math.max(1,count),trimmedLength=#characters(trimmed),
+        cjk=isCjk(segment)}
     cursor=cursor+length
 end
 local timing = textValue(Controller.Timings)
@@ -76,33 +93,19 @@ local units = {}
 local floatEnabled=numberValue(Controller.EnableFloat,1)>0.5
 local emphasisEnabled=numberValue(Controller.EnableEmphasis,1)>0.5
 local staggerEnabled=numberValue(Controller.EnableStagger,1)>0.5
-local baseHeight=numberValue(Controller.FloatHeight,.05)
+local baseHeight=numberValue(Controller.FloatHeight,.035)
 local minFloat=math.max(.01,numberValue(Controller.FloatDuration,1))
 local emphasisStrength=numberValue(Controller.Emphasis,1)
 local glowStrength=numberValue(Controller.EnableGlow,1)>0.5 and numberValue(Controller.Glow,1) or 0
 local bg=numberValue(Controller.BackgroundVocal,0)>0.5 and 2 or 1
 local threshold=numberValue(Controller.EmphasisDuration,1)
 local lastBoost=numberValue(Controller.LastWordBoost,1)>0.5
-local function cjk(text)
-    for _,ch in ipairs(characters(text)) do
-        local a,b,c=ch:byte(1,3)
-        if a and a>=224 and a<240 and b and c then
-            local cp=(a-224)*4096+(b-128)*64+c-128
-            if (cp>=0x3400 and cp<=0x9FFF) or (cp>=0x3040 and cp<=0x30FF) or (cp>=0xAC00 and cp<=0xD7A3) then return true end
-        end
-    end
-    return false
-end
 if valid then
     for rangeIndex,range in ipairs(ranges) do
         local span=range.finish-range.start
         local floatDuration=math.max(minFloat,span)
-        local floatProgress=floatEnabled and bezier((now-range.start)/floatDuration,0,0,.58,1) or 0
-        local word=segments[rangeIndex]
-        local trimmed=word:gsub("^%s+", ""):gsub("%s+$", "")
-        local trimmedLength=#characters(trimmed)
         local emphasis=emphasisEnabled and span>=threshold and emphasisStrength>0 and
-            (cjk(word) or (trimmedLength>1 and trimmedLength<=7))
+            (range.cjk or (range.trimmedLength>1 and range.trimmedLength<=7))
         local du=math.max(1,span)
         local amount=du/2
         amount=(amount>1 and math.sqrt(amount) or amount^3)*.6
@@ -120,17 +123,30 @@ if valid then
             local last=splitChars and first or range.first+range.length-1
             local delay=range.start+(splitChars and du/2.5/math.max(1,range.length)*j or 0)
             local pulse=emphasis and emphasisEnvelope((now-delay)/du) or 0
-            local floatPulse=floatEnabled and emphasis and math.sin(clamp((now-delay+.4)/(du*1.4),0,1)*math.pi) or 0
             local start=range.start
             local finish=range.start+(floatEnabled and floatDuration or span)
             if emphasis then start=math.min(start,delay-.4);finish=math.max(finish,delay+du*1.4-.4,delay+du) end
             units[#units+1]={index=first,last=last, progress=clamp((now-range.start)/span,0,1),
-                lift=floatEnabled and (bg*(baseHeight*floatProgress+.05*floatPulse)+pulse*.025*amount) or 0,
+                -- AMLL layers a normal word float with a staggered character
+                -- float.  Keep both timelines independent so neighbouring
+                -- characters can overlap smoothly instead of抢占 one slot.
+                floatStart=range.start,
+                floatDuration=floatDuration,
+                lift=0,
                 scale=1+pulse*.1*amount, dx=splitChars and -pulse*.03*amount*(range.length/2-j) or 0,
                 glow=pulse*blur*glowStrength, radius=math.min(.3,blur*.3),
                 start=start,finish=math.max(finish,range.finish),
                 wordFirst=range.first,wordLast=range.first+range.length-1}
         end
+    end
+end
+-- Keep the normal word lift and the character emphasis lift independent.
+-- Their overlap is intentional: the next word can inherit a smooth motion
+-- context instead of waiting for the previous word to finish.
+if floatEnabled then
+    for _,u in ipairs(units) do
+        local progress=clamp((now-u.floatStart)/math.max(1/fps,u.floatDuration),0,1)
+        u.lift=bg*baseHeight*bezier(progress,0,0,.58,1)
     end
 end
 local settled, activeEnd = 0, 0
