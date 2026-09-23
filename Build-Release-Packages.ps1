@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 [CmdletBinding()]
 param([string]$OutputDirectory,[switch]$SkipBuild)
 $ErrorActionPreference='Stop';$scriptRoot=if($scriptRoot){$scriptRoot}else{Split-Path -Parent $MyInvocation.MyCommand.Definition};if(-not $OutputDirectory){$OutputDirectory=Join-Path $scriptRoot 'dist'};$output=[IO.Path]::GetFullPath($OutputDirectory)
