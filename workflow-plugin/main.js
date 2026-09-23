@@ -79,7 +79,7 @@ async function execute(action, args = {}) {
 
 app.whenReady().then(() => {
   service = new LyricService(new AmllDatabase(path.join(app.getPath('userData'), 'amll-lyrics-cache')), new PlatformProviders());
-  window = new BrowserWindow({ width: 1140, height: 840, minWidth: 840, minHeight: 640, title: 'AMLL 歌词助手', backgroundColor: '#11131a', webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
+  window = new BrowserWindow({ width: 1140, height: 840, minWidth: 840, minHeight: 640, title: 'AppleMusic样式标题', backgroundColor: '#11131a', webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
   window.setMenu(null);
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());

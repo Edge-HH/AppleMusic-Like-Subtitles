@@ -1,6 +1,6 @@
-# AMLL Resolve 歌词助手
+# AppleMusic样式标题 · 歌词助手
 
-这是一个通过 **工作区 → 脚本 → Utility → AMLL 歌词助手** 启动的 DaVinci Resolve 歌词助手：Lua 菜单入口启动独立 Python 宿主，再连接本地 Electron 界面。它与仓库根目录生成的 `AM Lyrics` Fusion 标题预设配合使用。
+这是一个通过 **工作区 → 脚本 → Utility → AppleMusic样式标题** 启动的 DaVinci Resolve 歌词助手：Lua 菜单入口启动独立 Python 宿主，再连接本地 Electron 界面。它与仓库根目录生成的 `AppleMusic样式标题` Fusion 标题预设配合使用。
 
 ## 为什么不再使用“工作流程集成”
 
@@ -21,12 +21,12 @@ powershell -ExecutionPolicy Bypass -File .\Install-Windows.ps1
 
 安装器会：
 
-1. 安装当前语言的 `AM Lyrics.setting` 标题预设。
-2. 把 `AMLL 歌词助手.lua` 和 `amll-app.path` 安装到当前用户 `Fusion\Scripts\Utility`；应用放在 `Fusion\AMLL-Lyrics-App`，不混入脚本菜单扫描目录。
+1. 安装当前语言的 `AppleMusic样式标题.setting` 标题预设。
+2. 把 `AppleMusic样式标题.lua` 和 `amll-app.path` 安装到当前用户 `Fusion\Scripts\Utility`；应用放在 `Fusion\AppleMusic-Style-Title-App`，不混入脚本菜单扫描目录。
 3. 如果发现旧版 `com.edgehh.amll.lyrics` Workflow 插件或旧脚本，会先复制到 `D:\CodexBackup`，再删除旧安装。
 4. 自动记录 Resolve Electron 的路径；找不到时，脚本也会尝试常见的 Resolve 安装位置。
 
-安装完成后请完全重启 Resolve，再从 **工作区 → 脚本 → Utility → AMLL 歌词助手** 打开。Resolve 会在启动时扫描 Scripts 目录，安装后当前已经运行的 Resolve 不会自动刷新菜单。
+安装完成后请完全重启 Resolve，再从 **工作区 → 脚本 → Utility → AppleMusic样式标题** 打开。Resolve 会在启动时扫描 Scripts 目录，安装后当前已经运行的 Resolve 不会自动刷新菜单。
 
 ## 使用
 
@@ -35,7 +35,7 @@ powershell -ExecutionPolicy Bypass -File .\Install-Windows.ps1
 3. 在“导入范围”中填写开始行和结束行；预览中范围外歌词会变淡。
 4. 选择时间线锚点与歌词偏移。所选范围第一行的起点会落在锚点加偏移的位置，而不是保留整首歌开头的空白。
 5. 选择放置方式：顶部新轨道散落为顶层可编辑的 Fusion 文字，或合并为一个外层复合片段；不再逐句套内层歌词片段。
-6. 选择自动英文词间空格或自定义连接符（可留空）；预览与导入一致。`AM Lyrics` 保留真实逐字时间，最终文字上限为 256 个 Unicode 码点。
+6. 选择自动英文词间空格或自定义连接符（可留空）；预览与导入一致。`AppleMusic样式标题` 保留真实逐字时间，最终文字上限为 256 个 Unicode 码点。
 7. 点击“导入所选歌词到时间线”。界面显示进度和耗时，不再在 120 秒后误报超时；导入期间不要切换项目、时间线或重复提交。
 
 ## 普通脚本宿主文件
@@ -57,14 +57,14 @@ powershell -ExecutionPolicy Bypass -File .\Install-Windows.ps1
 ./Build-Plugin-Package.ps1
 ```
 
-脚本会按锁文件安装生产依赖、执行基础测试和语法检查，并生成 `dist/AMLL-Resolve-Script-v0.4.0.zip` 与 SHA-256 文件。
+脚本会按锁文件安装生产依赖、执行基础测试和语法检查，并生成 `dist/AppleMusic-Style-Title-Script-v<版本>.zip`（版本取自 `package.json`） 与 SHA-256 文件。
 
 ## 限制
 
 - 需要独立的 Python 3.8+ 64 位；未设置 `RESOLVE_SCRIPT_API` 时，从标准 Developer 目录加载 `DaVinciResolveScript.py`，不会误用当前目录。
 - 外部 API 可能被 Free／Studio 版本或脚本偏好设置限制；免费版完整导入尚未实测。
 - 需要先启动 Resolve，并打开项目和时间线。
-- 普通脚本模式默认使用 `AM Lyrics` 标题来源；媒体池中的其他 Fusion 标题仍保留在 Studio Workflow 兼容路径中。
+- 普通脚本模式默认使用 `AppleMusic样式标题` 标题来源；也可选择媒体池中的其他 Fusion 标题，届时会写入可编辑的 Text+ 文字并降级为逐行歌词，不伪造逐字时间。
 - 运行中的 Resolve 会缓存 Scripts 菜单；更新脚本后必须完全重启 Resolve。
 - 远程歌词索引和平台接口可能受到网络、地区、登录、限流或接口变化影响。
 
@@ -73,7 +73,7 @@ powershell -ExecutionPolicy Bypass -File .\Install-Windows.ps1
 1. 完全退出并重开 Resolve，以刷新 Scripts 菜单；安装不会更新正在运行的菜单缓存。
 2. 可在完整解压的一键安装包中双击 `Open-Lyrics.cmd`，不必等待菜单缓存。
 3. 安装器输出备用 `launch.ps1` 路径；`-CheckOnly` 可检查 Python 和宿主文件而不打开界面。
-4. 启动错误弹窗会指出原因，详细日志在 `%LOCALAPPDATA%\AMLL-Lyrics\logs\host.log`。
+4. 启动错误弹窗会指出原因，详细日志在 `%LOCALAPPDATA%\AppleMusic-Style-Title\logs\host.log`。
 5. 已修复空 `RESOLVE_SCRIPT_API` 被当成当前目录、PowerShell BOM 污染路径、Python 3.8+ 的 DLL 查找，以及官方 SDK 替换模块对象后的引用问题；DLL 设置仅对本次宿主进程生效。
 6. 若需要设置外部脚本访问，请在 Resolve 中自行核对偏好设置；安装器不会降低脚本安全限制。
 

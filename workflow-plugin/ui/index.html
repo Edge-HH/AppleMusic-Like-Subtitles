@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0c1014">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
-  <title>AMLL 字幕工作台</title>
+  <title>AppleMusic样式标题</title>
   <link rel="stylesheet" href="style.css">
   <script src="../lib/word-joiner.js" defer></script>
   <script src="app.js" defer></script>
@@ -15,16 +15,14 @@
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark" aria-hidden="true">AM</span>
-        <div><p class="eyebrow">AMLL / WORKFLOW</p><h1>字幕工作台</h1></div>
+        <span class="brand-mark" aria-hidden="true">ST</span>
+        <div><p class="eyebrow">APPLEMUSIC STYLE TITLE</p><h1>AppleMusic样式标题</h1></div>
       </div>
       <div class="host-controls">
         <div class="connection-state" aria-live="polite"><span class="status-dot" aria-hidden="true"></span><span id="hostStatus" class="banner">正在检查连接…</span></div>
         <button id="refreshHost" class="secondary compact" type="button">重新检查</button>
       </div>
     </header>
-
-    <div class="workspace-bar" aria-label="工作区信息"><span class="workspace-label">歌词导入</span><span class="workspace-divider" aria-hidden="true"></span><span class="muted">获取歌词，校准后写入当前时间线</span></div>
 
     <main id="workspace" class="workspace">
       <section class="panel source-panel" aria-labelledby="searchHeading">
@@ -36,16 +34,16 @@
         </form>
         <div class="file-import"><button id="importFile" class="secondary" type="button">导入字幕文件</button><select id="encoding" aria-label="文件编码"><option value="auto">自动识别编码</option><option value="utf-8">UTF-8</option><option value="gb18030">GB18030 / GBK</option><option value="utf-16le">UTF-16 LE</option><option value="utf-16be">UTF-16 BE</option></select><span class="file-types">SRT · LRC · TTML · YRC</span></div>
         <details class="secondary-details"><summary>直接粘贴歌词内容</summary><div class="details-content"><label for="pasteFormat">格式</label><select id="pasteFormat"><option value="lrc">LRC</option><option value="srt">SRT</option><option value="ttml">TTML</option><option value="yrc">YRC</option></select><textarea id="pasteText" rows="5" placeholder="[00:01.00]歌词内容" aria-label="歌词内容"></textarea><button id="parsePaste" class="secondary" type="button">解析粘贴内容</button></div></details>
-        <div class="results-heading"><div><h3>可选版本</h3><p class="muted">优先选择与当前音源一致的版本</p></div><span id="resultCount" class="result-count">尚未搜索</span></div>
+        <div class="results-heading"><div><h3>可选版本</h3></div><span id="resultCount" class="result-count">尚未搜索</span></div>
         <div id="results" class="results"><p class="empty">搜索结果会显示在这里</p></div>
       </section>
 
       <section class="panel preview-panel" aria-labelledby="previewHeading">
         <div class="panel-heading"><div class="heading-copy"><span class="step-number">02</span><div><h2 id="previewHeading">校准并导入</h2><p class="panel-subtitle">确认歌词范围与时间线位置</p></div></div><span class="section-tag">TIMELINE</span></div>
-        <div class="selection-summary"><div><h3 id="songTitle">尚未选择歌词</h3><p id="sourceInfo" class="muted">选择一个版本后显示来源与时间戳信息</p></div><span class="format-badge">LYRICS</span></div>
-        <div id="preview" class="preview"><p class="empty">这里显示时间戳、逐字分段和翻译。</p></div>
-        <fieldset class="range-box"><legend>导入范围</legend><div class="range-grid"><label for="rangeStartLine">开始行</label><input id="rangeStartLine" type="number" min="1" step="1" value="1"><span class="range-arrow" aria-hidden="true">→</span><label for="rangeEndLine">结束行</label><input id="rangeEndLine" type="number" min="1" step="1" value="1"></div><p id="rangeSummary" class="hint">选择歌词后可设置连续行范围。</p></fieldset>
-        <details class="placement-details" open><summary>时间线与样式</summary><div class="placement"><label for="anchor">插入起点</label><select id="anchor"><option value="playhead">当前播放头（导入时读取）</option><option value="timeline-start">时间线起点</option><option value="frame">指定绝对帧号</option></select><label for="startFrame">绝对帧号</label><input id="startFrame" type="number" min="0" step="1" value="0" disabled><label for="offsetMs">歌词偏移</label><div class="unit-input"><input id="offsetMs" type="number" min="-86400000" max="86400000" step="1" value="0"><span>ms</span></div><label for="placementMode">放置方式</label><select id="placementMode"><option value="scattered">散落到最上层新轨道</option><option value="fusion-clip">合并为一个复合片段（内部文字可编辑）</option></select><label for="joinerMode">分段连接</label><select id="joinerMode"><option value="auto">自动：英文补空格，中文不补</option><option value="custom">自定义连接符（所有语言）</option></select><label for="wordSeparator">自定义连接符</label><input id="wordSeparator" type="text" maxlength="64" value="" placeholder="空格、·、—" disabled aria-describedby="joinerHint"><label for="titleSource">Fusion 标题</label><div class="inline-control"><select id="titleSource"><option value="am-default">AM Lyrics</option></select><button id="refreshTitles" type="button" class="secondary compact">刷新</button></div></div><p id="joinerHint" class="hint">连接符不改变分词时间；预览、导出和导入使用同一规则。</p></details>
+        <div class="selection-summary"><div><h3 id="songTitle">尚未选择歌词</h3><p id="sourceInfo" class="muted"></p></div><span class="format-badge">LYRICS</span></div>
+        <div id="preview" class="preview"><p class="empty">尚未选择歌词</p></div>
+        <fieldset class="range-box"><legend>导入范围</legend><div class="range-grid"><label for="rangeStartLine">开始行</label><input id="rangeStartLine" type="number" min="1" step="1" value="1"><span class="range-arrow" aria-hidden="true">→</span><label for="rangeEndLine">结束行</label><input id="rangeEndLine" type="number" min="1" step="1" value="1"></div><p id="rangeSummary" class="hint"></p></fieldset>
+        <details class="placement-details" open><summary>时间线与样式</summary><div class="placement"><label for="anchor">插入起点</label><select id="anchor"><option value="playhead">当前播放头（导入时读取）</option><option value="timeline-start">时间线起点</option><option value="frame">指定绝对帧号</option></select><label for="startFrame">绝对帧号</label><input id="startFrame" type="number" min="0" step="1" value="0" disabled><label for="offsetMs">歌词偏移</label><div class="unit-input"><input id="offsetMs" type="number" min="-86400000" max="86400000" step="1" value="0"><span>ms</span></div><label for="placementMode">放置方式</label><select id="placementMode"><option value="scattered">散落到最上层新轨道</option><option value="fusion-clip">合并为一个复合片段</option></select><label for="joinerMode">分段连接</label><select id="joinerMode"><option value="auto">自动：英文补空格，中文不补</option><option value="custom">自定义连接符（所有语言）</option></select><label for="wordSeparator">自定义连接符</label><input id="wordSeparator" type="text" maxlength="32" value="" placeholder="空格、·、—" disabled aria-describedby="joinerHint"><label for="titleSource">Fusion 标题</label><div class="inline-control"><select id="titleSource"><option value="am-default">AppleMusic样式标题</option></select><button id="refreshTitles" type="button" class="secondary compact">刷新</button></div></div><p id="joinerHint" class="hint">连接符不改变分词时间。</p></details>
         <div class="renderer-status"><span class="status-dot" aria-hidden="true"></span><div id="rendererStatus" class="banner">正在检查时间线写入模块…</div></div>
         <div class="actions"><button id="render" class="primary-action" type="button" disabled>导入所选歌词</button><div class="export-actions"><button id="exportJson" class="secondary" type="button" disabled>导出 JSON</button><button id="exportSrt" class="secondary" type="button" disabled>导出 SRT</button></div></div>
       </section>

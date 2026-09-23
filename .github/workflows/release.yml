@@ -30,7 +30,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $files = Get-ChildItem dist -File | Where-Object { $_.Name -match '^AM-Lyrics-(Title-(ZH|EN)|Windows-Installer)-v.*\.(zip|sha256)$' -or $_.Name -match '^AMLL-Resolve-Workflow-v.*\.(zip|sha256)$' } | ForEach-Object FullName
+          $files = Get-ChildItem dist -File | Where-Object { $_.Name -match '^AppleMusic-Style-Title-(ZH|EN|Windows-Installer)-v.*\.(zip|sha256)$' -or $_.Name -match '^AppleMusic-Style-Title-Script-v.*\.(zip|sha256)$' } | ForEach-Object FullName
           if (gh release view "${{ github.ref_name }}" 2>$null) {
             gh release upload "${{ github.ref_name }}" @files --clobber
           } else {

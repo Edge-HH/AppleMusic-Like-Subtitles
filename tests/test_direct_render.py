@@ -13,21 +13,31 @@ class Macro:
     def __init__(self): self.inputs={}
     def SetInput(self,key,value): self.inputs[key]=value;return True
 
+class TextPlus:
+    def __init__(self): self.value='template text'
+    def GetAttrs(self): return {'TOOLS_RegID':'TextPlus','TOOLS_Name':'Title Text'}
+    def GetInput(self,name): return self.value if name=='StyledText' else None
+    def SetInput(self,name,value):
+        if name!='StyledText': return False
+        self.value=value;return True
+
 class Comp:
-    def __init__(self,flat=True): self.flat=flat;self.macro=Macro()
+    def __init__(self,flat=True,generic=False): self.flat=flat;self.generic=generic;self.macro=Macro();self.text=TextPlus() if generic else None
     def FindTool(self,name):
-        if name=='AMLLyrics': return self.macro
+        if name=='AppleMusicStyleTitle' and not self.generic: return self.macro
         if name=='MediaIn1' and not self.flat: return object()
         return None
+    def GetToolList(self): return {'TextPlus1':self.text} if self.text else {}
 
 class Clip:
-    def __init__(self,flat=True,start=0,duration=10): self.comps={'Composition 1':Comp(flat)};self.start=start;self.duration=duration;self.name='title';self.children=[]
+    def __init__(self,flat=True,start=0,duration=10,generic=False,unique_id=''):
+        self.generic=generic;self.unique_id=unique_id;self.comps={'Composition 1':Comp(flat,generic)};self.start=start;self.duration=duration;self.name='title';self.children=[]
     def GetFusionCompCount(self): return len(self.comps)
     def GetFusionCompByIndex(self,index): return list(self.comps.values())[index-1]
     def GetFusionCompNameList(self): return list(self.comps)
     def ExportFusionComp(self,path,index): Path(path).write_text('test composition',encoding='utf-8');return True
     def ImportFusionComp(self,path):
-        assert Path(path).is_file();comp=Comp();self.comps['Imported']=comp;return comp
+        assert Path(path).is_file();comp=Comp(generic=self.generic);self.comps['Imported']=comp;return comp
     def LoadFusionCompByName(self,name): return self.comps[name]
     def DeleteFusionCompByName(self,name): del self.comps[name];return True
     def GetMediaPoolItem(self): return self
@@ -36,10 +46,14 @@ class Clip:
     def GetStart(self): return self.start
     def GetEnd(self): return self.start+self.duration
     def SetName(self,name): self.name=name;return True
+    def GetUniqueId(self): return self.unique_id
+    def GetClipProperty(self): return {'Type':'Fusion Composition'}
 
 class Folder:
+    def __init__(self,clips=None): self.clips=clips or []
     def GetName(self): return 'root'
     def GetSubFolderList(self): return []
+    def GetClipList(self): return self.clips
 
 class Timeline:
     def __init__(self,project,name='target'): self.project=project;self.name=name;self.tracks=1;self.deleted=[]
@@ -74,7 +88,7 @@ class Pool:
     def DeleteClips(self,items): return True
     def AppendToTimeline(self,infos):
         self.project.append_calls+=1
-        self.items=[Clip(False,start=x['recordFrame'],duration=x['endFrame']-x['startFrame']) for x in infos]
+        self.items=[Clip(False,start=x['recordFrame'],duration=x['endFrame']-x['startFrame'],generic=getattr(x['mediaPoolItem'],'generic',False)) for x in infos]
         return self.items
 
 class Project:
@@ -147,5 +161,16 @@ class DirectRenderTests(unittest.TestCase):
         self.assertEqual(events[-1]['stage'],'文字写入完成，正在整理')
         self.assertEqual(events[-1]['completed'],3)
         self.assertEqual([x['completed'] for x in events if x['stage']=='正在写入顶层 Fusion 文字'],[1,2,3])
+
+    def test_media_pool_title_degrades_to_writable_line_text(self):
+        r=Resolve();source=Clip(generic=True,unique_id='custom-title');r.project.pool.root.clips=[source]
+        request=job();request['render']['titleSource']='media:custom-title'
+        request['document']['lines'][0]['text']='bad|line'  # Must not run AppleMusic样式标题 syntax validation.
+        result=host.render(r,request)
+        self.assertEqual(result['timing'],'line')
+        self.assertIn('逐行导入',result['message'])
+        self.assertEqual(r.project.title_inserts,0)
+        self.assertEqual(r.project.append_calls,2,'one source bootstrap plus the final batch')
+        self.assertEqual(r.project.pool.items[0].GetFusionCompByIndex(1).text.value,'bad|line')
 
 if __name__=='__main__':unittest.main()

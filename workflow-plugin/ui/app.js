@@ -17,7 +17,7 @@ function controls() {
   $('exportSrt').disabled = busy || !selected;
 }
 async function command(action, args) {
-  if (!window.lyricsAPI) throw new Error('请从达芬奇的 工作区 → 脚本 → Utility → AMLL 歌词助手 打开插件，而不是直接打开 HTML');
+  if (!window.lyricsAPI) throw new Error('请从达芬奇的 工作区 → 脚本 → Utility → AppleMusic样式标题 打开插件，而不是直接打开 HTML');
   const result = await window.lyricsAPI.command(action, args);
   if (!result.ok) throw new Error(result.error);
   return result.data;
@@ -41,14 +41,13 @@ function updateRangePreview() {
   $('rangeStartLine').value = first; $('rangeEndLine').value = last;
   document.querySelectorAll('.lyric-line').forEach((row, index) => row.classList.toggle('out-of-range', index + 1 < first || index + 1 > last));
   const start = selected.lines[first - 1], end = selected.lines[last - 1];
-  $('rangeSummary').textContent = `将导入第 ${first}–${last} 行，共 ${last - first + 1} 行；范围 ${time(start.startMs)} → ${time(end.endMs)}，第一行对齐插入起点。`;
+  $('rangeSummary').textContent = `将导入第 ${first}–${last} 行，共 ${last - first + 1} 行；范围 ${time(start.startMs)} → ${time(end.endMs)}`;
 }
 function joinerSettings() {
   return { joinerMode: $('joinerMode').value || 'auto', wordSeparator: $('wordSeparator').value };
 }
 function renderLyricPreview(doc) {
   const fragment = document.createDocumentFragment();
-  // 限制一次 DOM 构建规模；导出和渲染仍使用完整歌词文档。
   for (const [index, raw] of doc.lines.slice(0, 1000).entries()) {
     const item = window.amllTextFormatting.formatLine(raw, joinerSettings());
     const row = document.createElement('div'); row.className = 'lyric-line'; row.dataset.line = index + 1;
@@ -74,12 +73,12 @@ function showDocument(doc) {
   $('rangeStartLine').value = 1; $('rangeEndLine').value = doc.lines.length;
   updateRangePreview();
   warnings([...doc.warnings, ...(doc.lines.length > 1000 ? ['预览只显示前 1000 行；导出和渲染包含全部歌词。'] : [])]);
-  setMessage('已选择歌词；尚未修改达芬奇时间线。请核对范围、音源版本、时间起点和偏移。');
+  setMessage('已选择歌词');
 }
 function showResults(items, total) {
   $('resultCount').textContent = `${items.length} 个候选${total > 100 ? `（AMLL 共 ${total} 个，仅展示最新 100 个）` : ''}`;
   $('results').replaceChildren();
-  if (!items.length) { const p = document.createElement('p'); p.className = 'empty'; p.textContent = '未找到匹配。可更换关键词、使用歌曲链接或导入本地歌词。'; $('results').append(p); }
+  if (!items.length) { const p = document.createElement('p'); p.className = 'empty'; p.textContent = '未找到匹配'; $('results').append(p); }
   for (const item of items) {
     const container = document.createElement('div');
     const button = document.createElement('button'); button.className = 'candidate'; button.setAttribute('aria-pressed', 'false');
@@ -104,7 +103,7 @@ async function refreshTitleSources() {
   const previous = $('titleSource').value;
   const result = await command('titleSources');
   const options = [];
-  const builtInGroup = document.createElement('optgroup'); builtInGroup.label = 'AM Lyrics 逐字预设';
+  const builtInGroup = document.createElement('optgroup'); builtInGroup.label = 'AppleMusic样式标题 逐字预设';
   for (const item of result.builtIn) { const option = document.createElement('option'); option.value = item.key; option.textContent = item.name; builtInGroup.append(option); options.push(item.key); }
   const mediaGroup = document.createElement('optgroup'); mediaGroup.label = '媒体池 Fusion 标题（逐行）';
   for (const item of result.mediaPool) { const option = document.createElement('option'); option.value = item.key; option.textContent = `${item.name} · ${item.path || '媒体池'} · ${item.type}`; mediaGroup.append(option); options.push(item.key); }
@@ -113,8 +112,6 @@ async function refreshTitleSources() {
   if (!result.mediaPool.length) mediaGroup.label += '（未找到）';
 }
 async function refreshHost() {
-  // Discard stale readiness before reconnecting. A failed refresh must not leave
-  // old write controls enabled or a permanent "checking" banner on screen.
   status = null;
   $('hostStatus').className = 'banner';
   $('hostStatus').textContent = '正在检查连接…';
@@ -132,26 +129,26 @@ async function refreshHost() {
     }
     status = next;
     $('hostStatus').textContent = `已连接时间线：${timeline.name} · ${(rate.numerator / rate.denominator).toFixed(3)} fps · 播放头 ${timeline.currentTimecode}`;
-    $('rendererStatus').textContent = status.renderer.available ? '时间线写入模块已连接：批量放置顶层可编辑的 Fusion 文字，不再逐句嵌套；原有剪辑不会波纹移动。' : status.renderer.reason || '当前时间线写入模块不可用';
+    $('rendererStatus').textContent = status.renderer.available ? '时间线写入模块已连接' : status.renderer.reason || '当前时间线写入模块不可用';
     $('startFrame').value = timeline.startFrame;
     await refreshTitleSources();
-    setMessage('连接状态已更新。');
+    setMessage('连接状态已更新');
   } catch (error) {
     status = null;
     $('hostStatus').className = 'banner error';
     $('hostStatus').textContent = error.message || '连接检查失败';
-    $('rendererStatus').textContent = '时间线连接检查失败，暂不能写入；请按上方提示处理后刷新连接。';
+    $('rendererStatus').textContent = '时间线连接检查失败，暂不能写入';
     throw error;
   }
 }
 $('refreshHost').addEventListener('click', () => run('正在检查连接…', refreshHost));
-$('refreshTitles').addEventListener('click', () => run('正在扫描媒体池 Fusion 标题…', async () => { await refreshTitleSources(); setMessage('Fusion 标题列表已刷新。'); }));
+$('refreshTitles').addEventListener('click', () => run('正在扫描媒体池 Fusion 标题…', async () => { await refreshTitleSources(); setMessage('Fusion 标题列表已刷新'); }));
 $('searchForm').addEventListener('submit', event => {
   event.preventDefault();
   run('正在搜索歌词，首次同步可能需要一些时间…', async () => {
     const result = await command('search', { query: $('query').value, options: { refresh: $('refreshIndex').checked, platformSearch: $('platformSearch').checked, platform: $('platform').value } });
     showResults(result.results, result.totalAmll); warnings(result.warnings);
-    setMessage(`搜索完成。${result.indexUpdatedAt ? `词库更新时间：${new Date(result.indexUpdatedAt).toLocaleString('zh-CN')}。` : ''}请选择候选版本。`);
+    setMessage(`搜索完成。${result.indexUpdatedAt ? `词库更新时间：${new Date(result.indexUpdatedAt).toLocaleString('zh-CN')}。` : ''}`);
   });
 });
 $('importFile').addEventListener('click', () => run('请选择歌词文件…', async () => { const result = await command('importFile', { encoding: $('encoding').value }); if (result.document) showDocument(result.document); else setMessage('已取消导入。'); }));
@@ -161,11 +158,11 @@ for (const id of ['joinerMode', 'wordSeparator']) {
   $(id).addEventListener('change', () => run('正在更新连接符预览…', async () => {
     window.amllTextFormatting.options(joinerSettings());
     if (selected) { renderLyricPreview(selected); updateRangePreview(); }
-    setMessage('连接符设置已更新；预览、导出和导入将使用同一规则。');
+    setMessage('连接符设置已更新');
   }));
 }
 $('rangeStartLine').addEventListener('change', updateRangePreview); $('rangeEndLine').addEventListener('change', updateRangePreview);
-$('titleSource').addEventListener('change', () => { if ($('titleSource').value.startsWith('media:')) setMessage('已选择媒体池 Fusion 标题：导入时会降级为逐行歌词，不会伪造逐字时间。'); });
+$('titleSource').addEventListener('change', () => { if ($('titleSource').value.startsWith('media:')) setMessage('已选择媒体池 Fusion 标题，导入时按逐行歌词处理'); });
 function settings() {
   const { first, last } = normalizedRange();
   return { anchor: $('anchor').value, startFrame: Number($('startFrame').value), offsetMs: Number($('offsetMs').value), rangeStartLine: first, rangeEndLine: last, placementMode: $('placementMode').value, titleSource: $('titleSource').value, ...joinerSettings() };
@@ -173,7 +170,7 @@ function settings() {
 for (const [id, format] of [['exportJson', 'json'], ['exportSrt', 'srt']]) {
   $(id).addEventListener('click', () => run('准备导出…', async () => {
     const result = await command('export', { format, settings: settings() });
-    setMessage(result.canceled ? '已取消导出。' : `已导出：${result.path}${format === 'srt' ? '\n普通 SRT 不包含逐字动画和 Fusion 样式，仅应用所选范围与歌词偏移。' : '\n这是与当前导入设置一致的渲染任务文件。'}`);
+    setMessage(result.canceled ? '已取消导出。' : `已导出：${result.path}`);
   }));
 }
 window.lyricsAPI?.onRenderProgress?.(progress => {
@@ -182,11 +179,11 @@ window.lyricsAPI?.onRenderProgress?.(progress => {
   const elapsed = Number.isFinite(progress?.elapsedSeconds) ? ` · 已用时 ${progress.elapsedSeconds} 秒` : '';
   setMessage(`${progress?.stage || '宿主正在处理导入，请勿重复操作'}${count}${elapsed}`);
 });
-$('render').addEventListener('click', () => run('正在导入顶层 Fusion 文字，请勿切换项目或时间线…', async () => {
+$('render').addEventListener('click', () => run('正在导入歌词到时间线…', async () => {
   importInProgress = true;
   try {
     const result = await command('render', { settings: settings() });
-    setMessage(`已从 ${result.sourceLineCount} 行歌词创建 ${result.insertedCount} 个时间线片段，占用 ${result.createdTrackCount} 条顶部新轨道。${result.message || ''}`);
+    setMessage(`已创建 ${result.insertedCount} 个时间线片段`);
   } finally { importInProgress = false; }
 }));
 run('正在检查达芬奇连接…', refreshHost);

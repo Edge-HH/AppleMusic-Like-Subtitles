@@ -7,6 +7,6 @@ if(-not(Test-Path -LiteralPath $buildScript -PathType Leaf)){throw "找不到标
 $launcher=Get-Command py -ErrorAction SilentlyContinue
 if($launcher){& $launcher.Source -3 $buildScript --output $output}else{$python=Get-Command python -ErrorAction SilentlyContinue;if(-not $python){throw '找不到 Python 3。'};& $python.Source $buildScript --output $output}
 if($LASTEXITCODE -ne 0){throw "标题预设构建失败，退出码：$LASTEXITCODE"}
-$expected=@('zh\AM Lyrics.setting','en\AM Lyrics.setting','AM-Lyrics-ZH.drfx','AM-Lyrics-EN.drfx')
+$expected=@('zh\AppleMusic样式标题.setting','en\AppleMusic样式标题.setting','AppleMusic-Style-Title-ZH.drfx','AppleMusic-Style-Title-EN.drfx')
 foreach($name in $expected){if(-not(Test-Path -LiteralPath (Join-Path $output $name) -PathType Leaf)){throw "构建后缺少：$name"}}
 Write-Host "标题预设已生成到：$output";$expected|ForEach-Object{Write-Host "  - $_"}

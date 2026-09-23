@@ -26,14 +26,14 @@ test('渲染任务记录范围、标题来源与放置模式', () => {
   assert.deepEqual(job.placement.lineFrames[0], { startFrame: 86640, endFrameExclusive: 86664 });
 });
 
-test('AM Lyrics 输入使用真实逐字区间，逐行歌词只生成整行段', () => {
+test('AppleMusic样式标题 输入使用真实逐字区间，逐行歌词只生成整行段', () => {
   const wordLine = { text: '你好', startMs: 1000, endMs: 2000, words: [{ text: '你', startMs: 1000, endMs: 1400 }, { text: '好', startMs: 1400, endMs: 2000 }] };
   assert.deepEqual(buildAmInputs(wordLine, 24), { Lyrics: '你|好', Timings: '0-0.4|0.4-1', Duration: 1, Offset: 0, FPS: 24 });
   assert.deepEqual(buildAmInputs({ ...wordLine, words: [] }, 24), { Lyrics: '你好', Timings: '0-1', Duration: 1, Offset: 0, FPS: 24 });
 });
 
 test('单一预设支持长句且保留明确上限', () => {
-  assert.equal(choosePreset({ text: '字'.repeat(128) }), 'AM Lyrics');
+  assert.equal(choosePreset({ text: '字'.repeat(128) }), 'AppleMusic样式标题');
   assert.throws(() => choosePreset({ text: '字'.repeat(257) }), /256/);
 });
 

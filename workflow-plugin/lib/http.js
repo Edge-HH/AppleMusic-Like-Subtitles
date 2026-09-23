@@ -10,7 +10,7 @@ function request(url, options = {}, redirects = 0) {
     if (redirects > 4) return reject(new Error('链接重定向次数过多'));
     const { body, method = 'GET', headers = {}, maxBytes = 24 * 1024 * 1024, timeout = 20000 } = options;
     const req = https.request(target, {
-      method, headers: { 'User-Agent': 'AMLL-Resolve-Script/0.4', 'Accept-Encoding': 'identity', ...headers },
+      method, headers: { 'User-Agent': 'AppleMusic-Style-Title-Script/0.5', 'Accept-Encoding': 'identity', ...headers },
     }, res => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
         res.resume();

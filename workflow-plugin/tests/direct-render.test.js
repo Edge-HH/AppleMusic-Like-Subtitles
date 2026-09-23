@@ -8,7 +8,7 @@ function fixture() {
   const state={fusion:0,compound:0,inserts:0,append:0,deleted:[],clips:[]};
   function clip(flat=true,start=0,duration=48) {
     const makeComp=flat => ({ flat, macro: { inputs:{}, SetInput(k,v){this.inputs[k]=v;return true;} },
-      FindTool(name){return name==='AMLLyrics'?this.macro:null;} });
+      FindTool(name){return name==='AppleMusicStyleTitle'?this.macro:null;} });
     return { comps:{'Composition 1':makeComp(flat)}, start,duration,
       GetStart(){return this.start;},GetDuration(){return this.duration;},SetName(){return true;},SetClipProperty(){return true;},
       GetMediaPoolItem(){return this;},GetFusionCompCount(){return Object.keys(this.comps).length;},

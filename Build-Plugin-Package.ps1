@@ -60,7 +60,7 @@ try {
 }
 
 New-Item -ItemType Directory -Path $output -Force | Out-Null
-$archivePath = Join-Path $output "AMLL-Resolve-Script-v$version.zip"
+$archivePath = Join-Path $output "AppleMusic-Style-Title-Script-v$version.zip"
 $checksumPath = "$archivePath.sha256"
 
 Add-Type -AssemblyName System.IO.Compression
@@ -107,7 +107,7 @@ try {
     try {
         foreach ($file in $files) {
             $relative = $file.FullName.Substring($pluginRoot.Length).TrimStart([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
-            $entryName = 'AMLL-Resolve-Script/' + ($relative -replace '\\', '/')
+            $entryName = 'AppleMusic-Style-Title-Script/' + ($relative -replace '\\', '/')
             $entry = $archive.CreateEntry($entryName, [IO.Compression.CompressionLevel]::Optimal)
             $entry.LastWriteTime = [DateTimeOffset]::new(2026, 1, 1, 0, 0, 0, [TimeSpan]::Zero)
             $sourceStream = [IO.File]::OpenRead($file.FullName)

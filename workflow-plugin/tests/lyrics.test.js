@@ -45,6 +45,11 @@ test('TTML 拒绝 XML 实体、损坏 XML 和非法时间', () => {
   assert.throws(() => parseLyrics('<tt><body></tt>', 'ttml'));
   assert.throws(() => parseLyrics('<tt><body><p begin="1s" end="0s">x</p></body></tt>', 'ttml'));
 });
+test('TTML 元数据键不会踩到 Object.prototype', () => {
+  const doc = parseLyrics('<tt><head><metadata><meta key="hasOwnProperty" value="x"/><meta key="toString" value="y"/><meta key="musicName" value="歌"/></metadata></head><body><p begin="1s" end="2s">词</p></body></tt>', 'ttml');
+  assert.deepEqual(doc.metadata.musicName, ['歌']);
+  assert.deepEqual(Object.keys(doc.metadata).sort(), ['hasOwnProperty', 'musicName', 'toString']);
+});
 test('平台翻译按精确时间配对，不附加错位翻译', () => {
   const doc = parseLyrics('[00:01.00]Hello', 'lrc'); attachTranslations(doc, '[00:01.00]你好\n[00:02.00]其他');
   assert.equal(doc.lines[0].translations[0].text, '你好');

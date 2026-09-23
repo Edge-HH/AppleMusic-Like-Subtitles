@@ -28,6 +28,6 @@ try {
 } catch {
     if ($CheckOnly) { throw }
     Add-Type -AssemblyName System.Windows.Forms
-    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'AMLL 歌词助手启动失败', 'OK', 'Error') | Out-Null
+    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'AppleMusic样式标题启动失败', 'OK', 'Error') | Out-Null
     exit 1
 }

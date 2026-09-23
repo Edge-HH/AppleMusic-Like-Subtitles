@@ -112,7 +112,7 @@ function parseTtml(input) {
   const errors = [];
   const xml = new DOMParser({ onError: (level, message) => { errors.push(message); } }).parseFromString(input, 'application/xml');
   if (errors.length || xml.documentElement?.localName !== 'tt') throw new Error('TTML XML 格式无效');
-  const metadata = {};
+  const metadata = Object.create(null);
   for (const element of Array.from(xml.getElementsByTagName('*'))) {
     if (element.localName === 'meta' && element.hasAttribute('key')) {
       const key = element.getAttribute('key');

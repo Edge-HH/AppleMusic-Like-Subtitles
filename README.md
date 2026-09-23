@@ -1,4 +1,4 @@
-# AM Lyrics — Apple Music 风格逐字字幕
+# AppleMusic样式标题（AppleMusic-Style-Title）
 
 面向 **DaVinci Resolve Studio 19+** 的原生 Fusion 标题与歌词导入插件。
 
@@ -9,18 +9,18 @@
 
 每个 Release 同时发布：
 
-- `AM-Lyrics-Windows-Installer-v*.zip`：Windows 一键安装标题和 Scripts 插件，自动按系统界面语言选择中文或英文标题。
-- `AM-Lyrics-Title-ZH-v*.zip`：仅中文检查器标题；其中也包含可双击安装的 `AM-Lyrics-ZH.drfx`。
-- `AM-Lyrics-Title-EN-v*.zip`：仅英文检查器标题；其中也包含可双击安装的 `AM-Lyrics-EN.drfx`。
-- `AMLL-Resolve-Script-v*.zip`：仅 Scripts 插件。
+- `AppleMusic-Style-Title-Windows-Installer-v*.zip`：Windows 一键安装标题和 Scripts 插件，自动按系统界面语言选择中文或英文标题。
+- `AppleMusic-Style-Title-ZH-v*.zip`：仅中文检查器标题；其中也包含可双击安装的 `AppleMusic-Style-Title-ZH.drfx`。
+- `AppleMusic-Style-Title-EN-v*.zip`：仅英文检查器标题；其中也包含可双击安装的 `AppleMusic-Style-Title-EN.drfx`。
+- `AppleMusic-Style-Title-Script-v*.zip`：仅 Scripts 插件。
 
-同一台机器只安装一个语言的标题版本；中文和英文包里的模板文件名都叫 `AM Lyrics.setting`，不会同时在效果库出现两套语言。
+同一台机器只安装一个语言的标题版本；中文和英文包里的模板文件名都叫 `AppleMusic样式标题.setting`，不会同时在效果库出现两套语言。
 
 ### Windows 一键安装
 
-1. 解压 `AM-Lyrics-Windows-Installer-v*.zip`。
+1. 解压 `AppleMusic-Style-Title-Windows-Installer-v*.zip`。
 2. 双击 `Install-Windows.cmd`，安装到当前用户的 Resolve Scripts 目录。
-3. 安装器会备份旧标题／旧插件到 `D:\CodexBackup`，删除旧的旧版 AM Lyrics 模板文件，再安装当前系统语言对应的单一标题与歌词助手。
+3. 安装器会备份旧标题／旧插件到 `D:\CodexBackup`，删除旧的旧版 AppleMusic样式标题 模板文件，再安装当前系统语言对应的单一标题与歌词助手。
 4. 重启 Resolve。
 
 如果双击后窗口一闪而过，请先完整解压 ZIP，再运行解压目录里的 `Install-Windows.cmd`，不要直接双击压缩包内的文件或 `Install-Windows.ps1`；安装器会保留窗口并显示具体错误。
@@ -37,7 +37,7 @@
 > 本轮已完成算法／结构回归与部分原生接口验证，但**尚未完成新版完整图像和实时播放性能验收**；不能据此宣称逐帧等同 AMLL。
 > 旧版示例图片不代表此次效果，具体证据与阻塞情况见 [`docs/validation.md`](docs/validation.md)。
 
-效果库仍使用 **AM Lyrics**，保留原生 Fusion 标题，不改为网页视频渲染流程：
+效果库仍使用 **AppleMusic样式标题**，保留原生 Fusion 标题，不改为网页视频渲染流程：
 
 - 移除按字符数量估算宽度的矩形遮罩，以及重复叠加的底字／当前字结构。
 - 原生 Text+ `Start / End` 按实际排版截取字符或词；`WordBounds` 的图像 DataWindow 提供单词实际左右边界。
@@ -59,7 +59,7 @@
 
 ## 手动使用
 
-1. 更新安装并重启 Resolve 后，重新拖入 `AM Lyrics`；已有时间线标题包含旧节点副本，不会被安装器自动替换。
+1. 更新安装并重启 Resolve 后，重新拖入 `AppleMusic样式标题`；已有时间线标题包含旧节点副本，不会被安装器自动替换。
 2. 输入 `我|想要|留住|这一刻`。
 3. 留空时间使用自动节奏，或者输入 `0-0.5|0.5-1.5|1.8-2.6|2.6-4.2`。
 4. 分词只需在歌词中输入 `|`，或使用歌词助手导入已有逐字时间；不再提供字符范围选择和自动拆分时间的按钮。
@@ -77,19 +77,19 @@
 
 ## 从歌词助手直接导入
 
-菜单入口改为 **工作区 → 脚本 → Utility → AMLL 歌词助手**，由 Lua 启动器调用独立的 64 位 Python 3.8+ 宿主与本地 Electron 界面，不再依赖 Resolve 的嵌入式 Python 是否可用。
+菜单入口改为 **工作区 → 脚本 → Utility → AppleMusic样式标题**，由 Lua 启动器调用独立的 64 位 Python 3.8+ 宿主与本地 Electron 界面，不再依赖 Resolve 的嵌入式 Python 是否可用。
 
-如果菜单尚未刷新，完全退出并重开 Resolve；也可在完整解压的安装包中双击 **`Open-Lyrics.cmd`**。需要先启动 Resolve。启动失败会显示错误，并写入 `%LOCALAPPDATA%\AMLL-Lyrics\logs\host.log`，不再静默退出。
+如果菜单尚未刷新，完全退出并重开 Resolve；也可在完整解压的安装包中双击 **`Open-Lyrics.cmd`**。需要先启动 Resolve。启动失败会显示错误，并写入 `%LOCALAPPDATA%\AppleMusic-Style-Title\logs\host.log`，不再静默退出。
 
-**兼容性边界：** Lua 菜单入口不依赖 Workflow Integration 菜单，但独立 Python 连接的是外部 Resolve API，可能受到 Free／Studio 版本和脚本偏好设置限制；未实测免费版，不承诺免费版完整导入。普通脚本模式的媒体池自定义标题导入仍有限制，与此次动效重构无关。
+**兼容性边界：** Lua 菜单入口不依赖 Workflow Integration 菜单，但独立 Python 连接的是外部 Resolve API，可能受到 Free／Studio 版本和脚本偏好设置限制；未实测免费版，不承诺免费版完整导入。选择媒体池自定义 Fusion 标题时会降级为逐行 Text+ 写入，标题必须有可写的 `StyledText` 输入。
 
-打开 **工作区 → 脚本 → Utility → AMLL 歌词助手**：
+打开 **工作区 → 脚本 → Utility → AppleMusic样式标题**：
 
 1. 搜索 AMLL／平台歌词，或导入 SRT、LRC、TTML、YRC。
 2. 导入前选择连续歌词范围。
 3. 选择播放头、时间线起点或绝对帧，并设置偏移。
 4. 选择散落到顶部新轨道，或合并成一个 Fusion 片段。
-5. 选择 `AM Lyrics` 保留真实逐字时间；选择媒体池其他 Fusion 标题会明确降级为逐行歌词。
+5. 选择 `AppleMusic样式标题` 保留真实逐字时间；选择媒体池其他 Fusion 标题会明确降级为逐行歌词。
 
 插件不会覆盖或波纹移动现有剪辑。重叠的主唱／和声会自动放到额外顶部轨道。
 

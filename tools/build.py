@@ -207,7 +207,7 @@ def build(locale='zh', lyrics='我|想要|留住|这一刻', timings='', font=No
             exposed.append(f'        {key} = InstanceInput {{ SourceOp = "Controller", Source = "{key}", Name = {quote(labels[key])}, Page = "{page}",{group} }}')
     buttons=dict(ResetDefaults=user_control(labels['ResetDefaults'],button_script=reset_script(font=font,style=style)))
     for key in buttons: exposed.append(f'        {key} = {inp(0)}')
-    return '{\n  Tools = ordered() {\n    AMLLyrics = MacroOperator {\n      Inputs = ordered() {\n'+',\n'.join(exposed)+'\n      },\n'+f'      Outputs = {{ MainOutput1 = InstanceOutput {{ SourceOp = "{previous}", Source = "Output", }} }},\n'+ '      UserControls = ordered() {\n'+',\n'.join('        '+k+' = '+v for k,v in buttons.items())+'\n      },\n      ViewInfo = GroupInfo { Pos = { 0, 0 } },\n      Tools = ordered() {\n'+',\n'.join(nodes)+'\n      },\n    },\n  },\n  ActiveTool = "AMLLyrics",\n}\n'
+    return '{\n  Tools = ordered() {\n    AppleMusicStyleTitle = MacroOperator {\n      Inputs = ordered() {\n'+',\n'.join(exposed)+'\n      },\n'+f'      Outputs = {{ MainOutput1 = InstanceOutput {{ SourceOp = "{previous}", Source = "Output", }} }},\n'+ '      UserControls = ordered() {\n'+',\n'.join('        '+k+' = '+v for k,v in buttons.items())+'\n      },\n      ViewInfo = GroupInfo { Pos = { 0, 0 } },\n      Tools = ordered() {\n'+',\n'.join(nodes)+'\n      },\n    },\n  },\n  ActiveTool = "AppleMusicStyleTitle",\n}\n'
 
 
 def write_zip(path, entries):
@@ -221,8 +221,8 @@ def main():
     args.output.mkdir(parents=True,exist_ok=True)
     for locale,label in [('zh','ZH'),('en','EN')]:
         data=build(locale).encode('utf-8');folder=args.output/locale;folder.mkdir(parents=True,exist_ok=True)
-        (folder/'AM Lyrics.setting').write_bytes(data)
-        write_zip(args.output/f'AM-Lyrics-{label}.drfx',{'Edit/Titles/AM Lyrics/AM Lyrics.setting':data})
+        (folder/'AppleMusic样式标题.setting').write_bytes(data)
+        write_zip(args.output/f'AppleMusic-Style-Title-{label}.drfx',{'Edit/Titles/AppleMusic样式标题/AppleMusic样式标题.setting':data})
     print(f'Built localized titles in {args.output}')
 
 if __name__=='__main__': main()

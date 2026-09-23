@@ -35,7 +35,7 @@
 - `joinerMode` / `wordSeparator` 保存格式化选项。预览、任务、JSON 和 SRT 共用 `lib/word-joiner.js`。
 - 每个 lineFrame 使用包含起点、不包含终点的帧区间。插入后检查 GetStart/GetDuration，不静默接受错误长度。
 - `scattered` 返回多句独立 Fusion 文字；`fusion-clip` 为兼容保留的选项值，现创建一个外层 Compound Clip。
-- `am-default` 和旧的 am-auto/am-32/am-64 别名使用单一 AM Lyrics；普通脚本模式仍只支持 AM Lyrics，媒体池自定义标题仅在原生兼容桥接中支持，并降级为逐行。
+- `am-default` 和旧的 am-auto/am-32/am-64 别名使用单一 AppleMusic样式标题；选择媒体池自定义 Fusion 标题时，普通脚本与原生兼容桥接都会降级为逐行写入 Text+，不伪造逐字时间。
 
 ## 写入顺序
 

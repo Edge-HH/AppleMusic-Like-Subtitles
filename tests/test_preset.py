@@ -140,10 +140,10 @@ class PackageTests(unittest.TestCase):
     def test_default_character_spacing_is_opened_for_cjk(self):
         self.assertAlmostEqual(DEFAULTS['CharacterSpacing'],1.04)
         _,data=parse(build())
-        self.assertEqual(data.Tools.AMLLyrics.Tools.Controller.Inputs.CharacterSpacing.Value,1.04)
+        self.assertEqual(data.Tools.AppleMusicStyleTitle.Tools.Controller.Inputs.CharacterSpacing.Value,1.04)
 
     def test_graph_native_types_and_dependencies(self):
-        lua,data=parse(build());nodes=data.Tools.AMLLyrics.Tools
+        lua,data=parse(build());nodes=data.Tools.AppleMusicStyleTitle.Tools
         self.assertEqual(len(list(nodes.keys())),4+6*SLOT_COUNT)
         for _,tool in nodes.items():
             for _,value in tool.Inputs.items():
@@ -157,7 +157,7 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(nodes.Reveal01.Inputs.AlphaExpression.Value,'a1*i1*n7')
 
     def test_state_serialization_matches_all_native_fields(self):
-        lua,data=parse(build());controller=data.Tools.AMLLyrics.Tools.Controller
+        lua,data=parse(build());controller=data.Tools.AppleMusicStyleTitle.Tools.Controller
         state=evaluate('state',seconds=1.2)
         lua.globals().Controller=lua.table_from({'State':{'Value':state}},recursive=True)
         for slot,row in enumerate(state.split(';')[1:1+SLOT_COUNT],1):
@@ -167,7 +167,7 @@ class PackageTests(unittest.TestCase):
 
     def test_visible_buttons_and_meaningful_controls(self):
         for locale in ('zh','en'):
-            _,data=parse(build(locale));macro=data.Tools.AMLLyrics
+            _,data=parse(build(locale));macro=data.Tools.AppleMusicStyleTitle
             self.assertEqual(macro.UserControls.ResetDefaults.INPID_InputControl,'ButtonControl')
             self.assertIsNone(macro.UserControls.SetSegment)
             for removed in ('Softness','IdleBrightness','IdleBlur','ActiveBlur','SegmentCharacters','StartPosition','EndPosition','SegmentStart','SegmentEnd','SegmentStatus','SetSegment'):
@@ -179,7 +179,7 @@ class PackageTests(unittest.TestCase):
         lua,data=parse(build());lua.globals().inputs=lua.table_from(values,recursive=True)
         lua.execute('''tool={};function tool:GetInput(k) return inputs[k] end
             function tool:SetInput(k,v) inputs[k]=v end''')
-        lua.execute(data.Tools.AMLLyrics.UserControls[name].BTNCS_Execute)
+        lua.execute(data.Tools.AppleMusicStyleTitle.UserControls[name].BTNCS_Execute)
         return lua.globals().inputs
 
     def test_reset_preserves_lyrics_and_schedule(self):
@@ -194,7 +194,7 @@ class PackageTests(unittest.TestCase):
         lua,data=parse(build())
         lua.execute("Controller={S01Progress=1}; WordBounds01=setmetatable({}, {__index=function() error('unnecessary word raster') end})")
         for key in ('NumberIn2','NumberIn3'):
-            lua.execute(data.Tools.AMLLyrics.Tools.Reveal01.Inputs[key].Expression[1:])
+            lua.execute(data.Tools.AppleMusicStyleTitle.Tools.Reveal01.Inputs[key].Expression[1:])
 
     def test_effect_switches_disable_motion_and_reduce_slots(self):
         fields=dict(Lyrics='你好',Timings='0-2',seconds=1)
@@ -208,7 +208,7 @@ class PackageTests(unittest.TestCase):
             Glyph01={Output={DataWindow={100,20,300,80},Width=1000}}
             WordBounds01=setmetatable({}, {__index=function() error('duplicate raster') end})""")
         for key,expected in [('NumberIn2',.1),('NumberIn3',.3)]:
-            self.assertEqual(lua.execute(data.Tools.AMLLyrics.Tools.Reveal01.Inputs[key].Expression[1:]),expected)
+            self.assertEqual(lua.execute(data.Tools.AppleMusicStyleTitle.Tools.Reveal01.Inputs[key].Expression[1:]),expected)
 
     def test_staggered_characters_share_word_measurement(self):
         lua,data=parse(build())
@@ -216,18 +216,18 @@ class PackageTests(unittest.TestCase):
             Reveal01={NumberIn2=.1,NumberIn3=.3}
             WordBounds02=setmetatable({}, {__index=function() error('duplicate word raster') end})""")
         for key,expected in [('NumberIn2',.1),('NumberIn3',.3)]:
-            self.assertEqual(lua.execute(data.Tools.AMLLyrics.Tools.Reveal02.Inputs[key].Expression[1:]),expected)
+            self.assertEqual(lua.execute(data.Tools.AppleMusicStyleTitle.Tools.Reveal02.Inputs[key].Expression[1:]),expected)
 
     def test_disabled_and_future_sweeps_do_not_measure(self):
         lua,data=parse(build())
         for progress,enabled in [(0,1),(.5,0)]:
             lua.globals().Controller=lua.table_from(dict(S01Progress=progress,EnableSweep=enabled))
             for key in ('NumberIn2','NumberIn3'):
-                self.assertEqual(lua.execute(data.Tools.AMLLyrics.Tools.Reveal01.Inputs[key].Expression[1:]),0)
+                self.assertEqual(lua.execute(data.Tools.AppleMusicStyleTitle.Tools.Reveal01.Inputs[key].Expression[1:]),0)
 
     def test_weight_applies_to_visible_and_measurement_glyphs(self):
         _,data=parse(build())
-        nodes=data.Tools.AMLLyrics.Tools
+        nodes=data.Tools.AppleMusicStyleTitle.Tools
         for name in ['SettledText','FutureText']+[f'{prefix}{i:02}' for prefix in ('Glyph','WordBounds') for i in range(1,SLOT_COUNT+1)]:
             inputs=nodes[name].Inputs
             self.assertEqual(inputs.Thickness2.Expression,'Controller.WeightBoost')
@@ -237,7 +237,7 @@ class PackageTests(unittest.TestCase):
 
     def test_switches_are_checkboxes_and_zero_motion_bypasses_transform(self):
         _,data=parse(build())
-        nodes=data.Tools.AMLLyrics.Tools
+        nodes=data.Tools.AppleMusicStyleTitle.Tools
         for key in ('EnableSweep','EnableFloat','EnableEmphasis','EnableStagger','EnableGlow'):
             self.assertEqual(nodes.Controller.UserControls[key].INPID_InputControl,'CheckboxControl')
         lua,_=parse(build())
@@ -249,7 +249,7 @@ class PackageTests(unittest.TestCase):
 
     def test_sweep_endpoints_and_disabled_mode(self):
         lua,data=parse(build())
-        formula=data.Tools.AMLLyrics.Tools.Reveal01.Inputs.Intermediate1.Value.replace('if(', 'choose(')
+        formula=data.Tools.AppleMusicStyleTitle.Tools.Reveal01.Inputs.Intermediate1.Value.replace('if(', 'choose(')
         lua.execute('function choose(c,a,b) if c then return a else return b end end; min=math.min; max=math.max')
         for progress,enabled,expected in [(0,1,.4),(1,1,1),(.5,0,.4),(1,0,1)]:
             for x in [0,.1,.5,.9,1]:
@@ -274,10 +274,10 @@ class PackageTests(unittest.TestCase):
 
     def test_dist_matches_source_and_archive_crc(self):
         for locale,label in [('zh','ZH'),('en','EN')]:
-            self.assertEqual((ROOT/'dist'/locale/'AM Lyrics.setting').read_text('utf8'),build(locale))
-            with zipfile.ZipFile(ROOT/'dist'/f'AM-Lyrics-{label}.drfx') as archive:
+            self.assertEqual((ROOT/'dist'/locale/'AppleMusic样式标题.setting').read_text('utf8'),build(locale))
+            with zipfile.ZipFile(ROOT/'dist'/f'AppleMusic-Style-Title-{label}.drfx') as archive:
                 self.assertIsNone(archive.testzip())
-                self.assertEqual(archive.namelist(),['Edit/Titles/AM Lyrics/AM Lyrics.setting'])
+                self.assertEqual(archive.namelist(),['Edit/Titles/AppleMusic样式标题/AppleMusic样式标题.setting'])
                 self.assertEqual(archive.read(archive.namelist()[0]).decode('utf8'),build(locale))
 
 if __name__=='__main__': unittest.main()

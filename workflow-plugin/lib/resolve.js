@@ -30,7 +30,7 @@ class ResolveHost {
     const timeline = await project.GetCurrentTimeline();
     if (!timeline) throw new Error('请先创建或打开一条时间线');
     const name = await timeline.GetName();
-    const id = typeof timeline.GetUniqueId === 'function' ? await timeline.GetUniqueId() : name;
+    const id = (typeof timeline.GetUniqueId === 'function' ? await timeline.GetUniqueId() : null) || name;
     const rate = await timeline.GetSetting('timelineFrameRate');
     return { resolve, project, timeline, info: { id, name, frameRate: frameRate(rate), startFrame: Number(await timeline.GetStartFrame()), currentTimecode: await timeline.GetCurrentTimecode() } };
   }

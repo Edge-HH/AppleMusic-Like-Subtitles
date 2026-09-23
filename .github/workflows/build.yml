@@ -44,12 +44,12 @@ jobs:
       - name: "⬆️ 上传标题预设产物"
         uses: actions/upload-artifact@v7
         with:
-          name: AM-Lyrics-Title-Preset
+          name: AppleMusic-Style-Title-Preset
           path: |
-            dist/zh/AM Lyrics.setting
-            dist/en/AM Lyrics.setting
-            dist/AM-Lyrics-ZH.drfx
-            dist/AM-Lyrics-EN.drfx
+            dist/zh/AppleMusic样式标题.setting
+            dist/en/AppleMusic样式标题.setting
+            dist/AppleMusic-Style-Title-ZH.drfx
+            dist/AppleMusic-Style-Title-EN.drfx
           if-no-files-found: error
 
   workflow-plugin:
@@ -73,8 +73,8 @@ jobs:
       - name: "⬆️ 上传插件包产物"
         uses: actions/upload-artifact@v7
         with:
-          name: AMLL-Resolve-Workflow-Plugin
+          name: AppleMusic-Style-Title-Script-Plugin
           path: |
-            dist/AMLL-Resolve-Workflow-v*.zip
-            dist/AMLL-Resolve-Workflow-v*.zip.sha256
+            dist/AppleMusic-Style-Title-Script-v*.zip
+            dist/AppleMusic-Style-Title-Script-v*.zip.sha256
           if-no-files-found: error

@@ -44,14 +44,23 @@ class StartupTests(unittest.TestCase):
         from lupa.lua51 import LuaRuntime
         lua=LuaRuntime(unpack_returned_tuples=True)
         lua.execute('''launched=nil;io.open=function(path,mode)
-          if path:match('amll%-app.path$') then return {read=function() return 'C:/Test folder/AMLL-Lyrics-App' end,close=function() end} end
+          if path:match('amll%-app.path$') then return {read=function() return 'C:/Test folder/AppleMusic-Style-Title-App' end,close=function() end} end
           return {close=function() end}
         end
         os.execute=function(command) launched=command end
         debug.getinfo=function() return {source='@C:/Scripts/Utility/AMLL.lua'} end''')
         lua.execute((ROOT/'workflow-plugin/launcher.lua').read_text('utf-8-sig'))
-        self.assertIn('-File "C:/Test folder/AMLL-Lyrics-App\\launch.ps1"',lua.globals().launched)
+        self.assertIn('-File "C:/Test folder/AppleMusic-Style-Title-App\\launch.ps1"',lua.globals().launched)
         self.assertIn('-WindowStyle Hidden',lua.globals().launched)
+
+    def test_parse_rate_accepts_labeled_and_plain_values(self):
+        self.assertEqual(host.parse_rate('24'), {'numerator': 24, 'denominator': 1})
+        self.assertEqual(host.parse_rate('29.97 DF'), {'numerator': 30000, 'denominator': 1001})
+        self.assertEqual(host.parse_rate(' 23.976 '), {'numerator': 24000, 'denominator': 1001})
+        with self.assertRaises(host.HostError):
+            host.parse_rate('abc')
+        with self.assertRaises(host.HostError):
+            host.parse_rate('0')
 
     def test_full_package_contains_entry_and_shared_installer(self):
         source=(ROOT/'Build-Release-Packages.ps1').read_text('utf-8-sig')

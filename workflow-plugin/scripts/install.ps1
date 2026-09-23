@@ -9,14 +9,14 @@ $source = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $scriptsRoot = [IO.Path]::GetFullPath($DestinationRoot)
 $utility = [IO.Path]::GetFullPath((Join-Path $scriptsRoot 'Utility'))
 # Application code is outside the scanned Scripts tree. Only the Lua launcher is a menu entry.
-$appTarget = [IO.Path]::GetFullPath((Join-Path $scriptsRoot '..\AMLL-Lyrics-App'))
-$entry = Join-Path $utility 'AMLL 歌词助手.lua'
+$appTarget = [IO.Path]::GetFullPath((Join-Path $scriptsRoot '..\AppleMusic-Style-Title-App'))
+$entry = Join-Path $utility 'AppleMusic样式标题.lua'
 $required = @('launcher.lua','launch.ps1','script-host.py','main.js','preload.js','manifest.xml','package.json','package-lock.json','README.md','THIRD_PARTY_NOTICES.md','lib','ui','adapters','node_modules','docs')
 foreach ($name in $required) {
     if (-not (Test-Path -LiteralPath (Join-Path $source $name))) { throw "插件源文件不完整：$name；尚未修改旧安装。" }
 }
 $oldTargets = @(
-    $entry, (Join-Path $utility 'AMLL 歌词助手.py'), (Join-Path $utility 'AMLL-Lyrics-App'), $appTarget
+    $entry, (Join-Path $utility 'AppleMusic样式标题.py'), (Join-Path $utility 'AppleMusic-Style-Title-App'), $appTarget
 ) | ForEach-Object { [IO.Path]::GetFullPath($_) }
 $defaultRoot = [IO.Path]::GetFullPath("$env:APPDATA\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts")
 if ($scriptsRoot -eq $defaultRoot) {
@@ -55,5 +55,5 @@ try {
 } catch { Write-Warning '菜单入口已安装，但未找到可用的 64 位 Python；启动时会显示诊断信息。' }
 Write-Host "菜单入口已安装：$entry"
 Write-Host "备用打开方式：powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$appTarget\launch.ps1`""
-Write-Host '完全退出并重开 Resolve 后，在 工作区 → 脚本 → Utility → AMLL 歌词助手 打开。'
+Write-Host '完全退出并重开 Resolve 后，在 工作区 → 脚本 → Utility → AppleMusic样式标题 打开。'
 Write-Host '需要 64 位 Python 3.8+；外部 Resolve API 若被版本或偏好设置限制，会显示原因，不再静默退出。'

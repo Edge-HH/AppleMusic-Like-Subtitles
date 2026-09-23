@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AMLL 歌词助手的 DaVinci Resolve 普通脚本宿主。
+"""AppleMusic样式标题的 DaVinci Resolve 普通脚本宿主。
 
 Lua 菜单入口启动独立 Python 宿主，再用本地 JSON-RPC 连接 Electron。
 外部 Resolve API 的可用性取决于宿主版本及偏好设置；启动错误会写日志并显示。
@@ -27,8 +27,8 @@ from pathlib import Path
 
 MAX_REQUEST_BYTES = 32 * 1024 * 1024
 PLUGIN_ID = "com.edgehh.amll.lyrics"
-GENERATED_FOLDER = "AMLL 歌词生成"
-TRACK_NAME = "AMLL 歌词"
+GENERATED_FOLDER = "AppleMusic样式标题生成"
+TRACK_NAME = "AppleMusic样式标题"
 # Keep DLL search handles alive for the lifetime of the native scripting module.
 _DLL_SEARCH_HANDLES = []
 
@@ -91,6 +91,12 @@ def find_electron(script_dir):
             continue
         seen.add(key)
         if path.is_file():
+            try:
+                hint = script_dir / "resolve-electron.path"
+                if not hint.is_file() or hint.read_text(encoding="utf-8-sig").strip() != str(path):
+                    hint.write_text(str(path), encoding="utf-8")
+            except OSError:
+                pass
             return path
     raise HostError("找不到 DaVinci Resolve 的 Electron 运行时，请重装插件或设置 AMLL_RESOLVE_ELECTRON 环境变量")
 
@@ -138,15 +144,18 @@ def load_resolve(electron_path):
 
 def parse_rate(value):
     text = as_text(value).strip()
-    try:
-        number = float(text)
-    except ValueError as error:
-        raise HostError(f"时间线帧率无效：{text}") from error
+    # Match JS Number.parseFloat: Resolve may return "29.97" or a labeled string.
+    match = re.match(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?", text)
+    if not match:
+        raise HostError(f"时间线帧率无效：{text}")
+    number = float(match.group(0))
     known = [(23.976, 24000, 1001), (29.97, 30000, 1001), (47.952, 48000, 1001), (59.94, 60000, 1001), (119.88, 120000, 1001)]
     for rounded, numerator, denominator in known:
         if abs(number - rounded) < 0.002:
             return {"numerator": numerator, "denominator": denominator}
-    fraction = Fraction(text).limit_denominator(1001)
+    if number <= 0 or number > 240:
+        raise HostError(f"时间线帧率无效：{text}")
+    fraction = Fraction(match.group(0)).limit_denominator(1001)
     return {"numerator": fraction.numerator, "denominator": fraction.denominator}
 
 
@@ -159,8 +168,9 @@ def context(resolve):
     if timeline is None:
         raise HostError("请先创建或打开一条时间线")
     name = as_text(call(timeline, "GetName"))
-    timeline_id = as_text(call(timeline, "GetUniqueId", default=None), name)
+    timeline_id = as_text(call(timeline, "GetUniqueId", default=None), name) or name
     rate = parse_rate(call(timeline, "GetSetting", "timelineFrameRate"))
+    start_frame = call(timeline, "GetStartFrame", default=0)
     return {
         "project": project,
         "timeline": timeline,
@@ -168,7 +178,7 @@ def context(resolve):
             "id": timeline_id,
             "name": name,
             "frameRate": rate,
-            "startFrame": int(call(timeline, "GetStartFrame", default=0)),
+            "startFrame": int(start_frame or 0),
             "currentTimecode": as_text(call(timeline, "GetCurrentTimecode", default="00:00:00:00")),
         },
     }
@@ -206,12 +216,24 @@ def scan_media_titles(folder, path_parts=None, result=None):
     return result
 
 
+def find_media_title(folder, unique_id):
+    """Find a selected media-pool title without modifying the user's source."""
+    for clip in folder_clips(folder):
+        if as_text(call(clip, "GetUniqueId")) == unique_id:
+            return clip
+    for child in folder_children(folder):
+        found = find_media_title(child, unique_id)
+        if found is not None:
+            return found
+    return None
+
+
 def title_sources(resolve):
     info = context(resolve)
     media_pool = call(info["project"], "GetMediaPool")
     root = call(media_pool, "GetRootFolder")
     return {
-        "builtIn": [{"key": "am-default", "name": "AM Lyrics", "timing": "word"}],
+        "builtIn": [{"key": "am-default", "name": "AppleMusic样式标题", "timing": "word"}],
         "mediaPool": scan_media_titles(root) if root is not None else [],
     }
 
@@ -228,16 +250,16 @@ def code_point_length(text):
 def build_am_inputs(line, fps):
     text = as_text(line.get("text"))
     if code_point_length(text) > 256:
-        raise HostError(f"第 {line.get('_rangeLine', '?')} 行超过 AM Lyrics 单行 256 字符限制，请先拆行")
+        raise HostError(f"第 {line.get('_rangeLine', '?')} 行超过 AppleMusic样式标题 单行 256 字符限制，请先拆行")
     words = line.get("words") or []
     if words:
         if any("|" in as_text(word.get("text")) for word in words):
-            raise HostError(f"第 {line.get('_rangeLine', '?')} 行含有“|”，无法安全写入 AM Lyrics 分段语法")
+            raise HostError(f"第 {line.get('_rangeLine', '?')} 行含有“|”，无法安全写入 AppleMusic样式标题 分段语法")
         segments = [as_text(word.get("text")) for word in words]
         timings = [f"{seconds(word['startMs'] - line['startMs'])}-{seconds(word['endMs'] - line['startMs'])}" for word in words]
     else:
         if "|" in text:
-            raise HostError(f"第 {line.get('_rangeLine', '?')} 行含有“|”，无法安全写入 AM Lyrics 分段语法")
+            raise HostError(f"第 {line.get('_rangeLine', '?')} 行含有“|”，无法安全写入 AppleMusic样式标题 分段语法")
         segments = [text]
         timings = [f"0-{seconds(line['endMs'] - line['startMs'])}"]
     inputs = {"Lyrics": "|".join(segments), "Timings": "|".join(timings), "Duration": (line["endMs"] - line["startMs"]) / 1000, "Offset": 0, "FPS": fps}
@@ -268,13 +290,45 @@ def comp_for_item(item):
 def configure_am_title(item, line, fps):
     comp = comp_for_item(item)
     if comp is None:
-        raise HostError("AM Lyrics 标题没有可编辑的 Fusion 合成")
-    macro = call(comp, "FindTool", "AMLLyrics")
+        raise HostError("AppleMusic样式标题 标题没有可编辑的 Fusion 合成")
+    macro = call(comp, "FindTool", "AppleMusicStyleTitle")
     if macro is None:
-        raise HostError("所选 AM Lyrics 预设缺少 AMLLyrics 控制器，请重新安装当前版本标题预设")
+        raise HostError("所选 AppleMusic样式标题 预设缺少 AppleMusicStyleTitle 控制器，请重新安装当前版本标题预设")
     for name, value in build_am_inputs(line, fps).items():
         if call(macro, "SetInput", name, value, default=True) is False:
-            raise HostError(f"无法写入 AM Lyrics 参数：{name}")
+            raise HostError(f"无法写入 AppleMusic样式标题 参数：{name}")
+
+
+def configure_generic_title(item, line):
+    """Write one whole lyric line to a media-pool Text+ title.
+
+    A custom title has no timing controller contract, so it intentionally does
+    not receive fabricated word timings.
+    """
+    comp = comp_for_item(item)
+    if comp is None:
+        raise HostError("所选媒体池 Fusion 标题没有可编辑合成，不能作为逐行标题模板")
+    candidates = []
+    for tool in values(call(comp, "GetToolList", default=[])):
+        attrs = call(tool, "GetAttrs", default={}) or {}
+        if not isinstance(attrs, dict) or as_text(attrs.get("TOOLS_RegID")) != "TextPlus":
+            continue
+        name = as_text(attrs.get("TOOLS_Name"))
+        candidates.append((tool, name))
+    candidates.sort(key=lambda candidate: 0 if any(word in candidate[1].lower() for word in ("controller", "title", "text")) else 1)
+    for tool, _name in candidates:
+        try:
+            current = call(tool, "GetInput", "StyledText")
+            if current is None:
+                continue
+            if call(tool, "SetInput", "StyledText", as_text(line.get("text")), default=False) is False:
+                continue
+            if as_text(call(tool, "GetInput", "StyledText")) == as_text(line.get("text")):
+                return
+        except Exception:
+            # A Text+ tool can expose a read-only StyledText input; try the next one.
+            continue
+    raise HostError("所选媒体池 Fusion 标题中没有找到可写的 Text+ StyledText 输入")
 
 
 def get_or_create_generated_folder(media_pool):
@@ -304,30 +358,42 @@ def template_directory():
                 logging.warning("AMLL temporary template cleanup deferred: %s", resolved)
 
 
-def create_title_seed(scratch, duration_frames, template_path):
+def create_title_seed(media_pool, scratch, title_source, custom_source, duration_frames, template_path):
     """Bootstrap once; the shared source is never used as the lyrics graph."""
-    if call(scratch, "SetMarkInOut", 0, duration_frames - 1, "video") is not True:
-        raise HostError("无法设置标题源长度")
-    title = call(scratch, "InsertFusionTitleIntoTimeline", "AM Lyrics")
-    if title is None or comp_for_item(title) is None:
-        raise HostError("无法加载 AM Lyrics 标题，请检查标题安装并重启 Resolve")
+    built_in = title_source.startswith("am-")
+    if built_in:
+        if call(scratch, "SetMarkInOut", 0, duration_frames - 1, "video") is not True:
+            raise HostError("无法设置标题源长度")
+        title = call(scratch, "InsertFusionTitleIntoTimeline", "AppleMusic样式标题")
+        if title is None or comp_for_item(title) is None:
+            raise HostError("无法加载 AppleMusic样式标题 标题，请检查标题安装并重启 Resolve")
+    else:
+        title = values(call(media_pool, "AppendToTimeline", [{
+            "mediaPoolItem": custom_source, "startFrame": 0, "endFrame": duration_frames,
+            "mediaType": 1, "trackIndex": 1, "recordFrame": call(scratch, "GetStartFrame"),
+        }]))
+        title = title[0] if title else None
+        if title is None:
+            raise HostError("无法将所选媒体池 Fusion 标题加入准备时间线")
     if call(title, "ExportFusionComp", str(template_path), 1) is not True:
         raise HostError("无法导出现有标题节点")
+    if not built_in:
+        return custom_source
     # The native insertion API cannot select a destination track. A single empty
     # source enables frame/track-addressed AppendToTimeline without per-line wrappers.
-    macro = call(comp_for_item(title), "FindTool", "AMLLyrics")
+    macro = call(comp_for_item(title), "FindTool", "AppleMusicStyleTitle")
     if macro is None:
-        raise HostError("标题中缺少 AMLLyrics 控制器")
+        raise HostError("标题中缺少 AppleMusicStyleTitle 控制器")
     call(macro, "SetInput", "Lyrics", "")
     carrier = call(scratch, "CreateFusionClip", [title])
     seed = call(carrier, "GetMediaPoolItem") if carrier is not None else None
     if seed is None:
         raise HostError("无法建立可复用的 Fusion 定位源")
-    call(seed, "SetClipProperty", "Clip Name", "AMLL 标题定位源（共享，不含歌词）")
+    call(seed, "SetClipProperty", "Clip Name", "AppleMusic样式标题定位源（共享，不含歌词）")
     return seed
 
 
-def install_title_graph(item, template_path, line, fps):
+def install_title_graph(item, template_path, line, fps, built_in):
     """Each timeline instance owns one independent top-level title composition."""
     previous = values(call(item, "GetFusionCompNameList", default=[]))
     comp = call(item, "ImportFusionComp", str(template_path))
@@ -335,15 +401,18 @@ def install_title_graph(item, template_path, line, fps):
         raise HostError("无法将标题节点直接写入时间线片段")
     current = values(call(item, "GetFusionCompNameList", default=[]))
     added = [name for name in current if name not in previous]
-    if len(added) != 1 or call(item, "LoadFusionCompByName", added[0]) is None:
+    if len(added) != 1 or not call(item, "LoadFusionCompByName", added[0]):
         raise HostError("无法确认新标题合成为活动合成")
     # Remove the inherited MediaIn wrapper, rather than leave a second editable
     # composition that still points to a nested title or another lyric instance.
     for name in previous:
         if call(item, "DeleteFusionCompByName", name) is not True:
             raise HostError("无法清除定位源的旧包装合成")
-    configure_am_title(item, line, fps)
-    call(item, "SetName", as_text(line.get("text"))[:80] or "AM Lyrics")
+    if built_in:
+        configure_am_title(item, line, fps)
+    else:
+        configure_generic_title(item, line)
+    call(item, "SetName", as_text(line.get("text"))[:80] or "AppleMusic样式标题")
 
 
 def render(resolve, job, progress=None):
@@ -359,8 +428,9 @@ def render(resolve, job, progress=None):
     if current["info"]["id"] != as_text(placement.get("timelineId")):
         raise HostError("当前时间线已变化，请刷新连接后重新导入")
     title_source = as_text(job.get("render", {}).get("titleSource", "am-default"))
-    if not title_source.startswith("am-"):
-        raise HostError("普通脚本模式暂只支持 AM Lyrics 标题来源，请选择 AM Lyrics")
+    built_in = title_source.startswith("am-")
+    if not built_in and not title_source.startswith("media:"):
+        raise HostError("无效的 Fusion 标题来源")
     mode = job.get("render", {}).get("placementMode", "scattered")
     if mode not in ("scattered", "fusion-clip"):
         raise HostError("无效的歌词放置方式")
@@ -375,8 +445,9 @@ def render(resolve, job, progress=None):
         if type(start) is not int or type(end) is not int or end <= start or start < current["info"]["startFrame"]:
             raise HostError(f"第 {index + 1} 行帧区间无效")
         durations.append(end - start)
-        # Validate the final, joined text before adding folders, tracks or clips.
-        build_am_inputs(dict(line, _rangeLine=index + 1), fps)
+        # Only AppleMusic样式标题 has a word-timing controller and its related limits.
+        if built_in:
+            build_am_inputs(dict(line, _rangeLine=index + 1), fps)
 
     def report(stage, completed=0):
         if progress is not None:
@@ -387,20 +458,25 @@ def render(resolve, job, progress=None):
 
     media_pool = call(project, "GetMediaPool")
     original_folder = call(media_pool, "GetCurrentFolder")
+    custom_source = None
+    if not built_in:
+        custom_source = find_media_title(call(media_pool, "GetRootFolder"), title_source[6:])
+        if custom_source is None:
+            raise HostError("所选媒体池 Fusion 标题已移动或删除，请刷新标题列表")
     lanes = assign_track_lanes(frames)
     lane_count = max(lanes) + 1
     inserted, created_tracks = [], []
     scratch, seed, final_item = None, None, None
     with template_directory() as temporary:
-        template_path = Path(temporary) / "AM Lyrics.comp"
+        template_path = Path(temporary) / "AppleMusic样式标题.comp"
         try:
             report("正在准备可复用标题源")
             generated_folder = get_or_create_generated_folder(media_pool)
             call(media_pool, "SetCurrentFolder", generated_folder)
-            scratch = call(media_pool, "CreateEmptyTimeline", f"AMLL 临时 {int(time.time() * 1000)}")
+            scratch = call(media_pool, "CreateEmptyTimeline", f"AppleMusic样式标题 临时 {int(time.time() * 1000)}")
             if scratch is None or call(project, "SetCurrentTimeline", scratch) is not True:
                 raise HostError("无法创建或切换到歌词准备时间线")
-            seed = create_title_seed(scratch, max(durations) + 1, template_path)
+            seed = create_title_seed(media_pool, scratch, title_source, custom_source, max(durations) + 1, template_path)
             if call(project, "SetCurrentTimeline", timeline) is not True:
                 raise HostError("无法切回原时间线")
             old_track_count = int(call(timeline, "GetTrackCount", "video", default=0) or 0)
@@ -418,9 +494,12 @@ def render(resolve, job, progress=None):
             if len(inserted) != len(lines):
                 raise HostError(f"只创建了 {len(inserted)}/{len(lines)} 个歌词片段")
             for index, item in enumerate(inserted):
-                if call(item, "GetStart") != frames[index]["startFrame"] or call(item, "GetDuration") != durations[index]:
+                # Resolve may box these as str/float; compare like the JS bridge does.
+                if as_text(call(item, "GetStart"), "") == "" or as_text(call(item, "GetDuration"), "") == "":
                     raise HostError(f"第 {index + 1} 行位置或长度写入异常")
-                install_title_graph(item, template_path, dict(lines[index], _rangeLine=index + 1), fps)
+                if int(float(call(item, "GetStart"))) != frames[index]["startFrame"] or int(float(call(item, "GetDuration"))) != durations[index]:
+                    raise HostError(f"第 {index + 1} 行位置或长度写入异常")
+                install_title_graph(item, template_path, dict(lines[index], _rangeLine=index + 1), fps, built_in)
                 report("正在写入顶层 Fusion 文字", index + 1)
             if mode == "fusion-clip":
                 report("正在创建唯一的外层复合片段", len(lines))
@@ -434,9 +513,9 @@ def render(resolve, job, progress=None):
             report("文字写入完成，正在整理", len(lines))
             return {"insertedCount": 1 if final_item else len(inserted), "sourceLineCount": len(lines),
                     "createdTrackCount": 1 if final_item else lane_count,
-                    "timing": job.get("document", {}).get("timing", "line"),
+                    "timing": job.get("document", {}).get("timing", "line") if built_in else "line",
                     "structure": "compound" if final_item else "top-level-fusion",
-                    "message": "每句文字均位于自身 Fusion 合成顶层，无逐句歌词嵌套。"}
+                    "message": "每句文字均位于自身 Fusion 合成顶层，无逐句歌词嵌套。" if built_in else "已使用媒体池标题逐行导入，文字位于各片段顶层。"}
         except Exception as error:
             try:
                 call(project, "SetCurrentTimeline", timeline)
@@ -447,11 +526,11 @@ def render(resolve, job, progress=None):
                 for index in sorted(created_tracks, reverse=True):
                     if not values(call(timeline, "GetItemListInTrack", "video", index)):
                         call(timeline, "DeleteTrack", "video", index)
-                if seed is not None:
+                if seed is not None and built_in:
                     call(media_pool, "DeleteClips", [seed])
             except Exception:
                 pass
-            raise HostError(f"{error}；已尝试回滚本次新增片段，请检查 AMLL 歌词轨道") from error
+            raise HostError(f"{error}；已尝试回滚本次新增片段，请检查 AppleMusic样式标题轨道") from error
         finally:
             try:
                 call(project, "SetCurrentTimeline", timeline)
@@ -473,7 +552,7 @@ def dispatch(resolve, action, args, progress=None):
 
 
 class RpcHandler(BaseHTTPRequestHandler):
-    server_version = "AMLLScriptHost/0.4"
+    server_version = "AMLLScriptHost/0.5"
 
     def log_message(self, _format, *_args):
         return
@@ -552,7 +631,7 @@ class RpcHandler(BaseHTTPRequestHandler):
 
 def main():
     script_dir = Path(__file__).resolve().parent
-    app_dir = script_dir if (script_dir / "package.json").is_file() else script_dir / "AMLL-Lyrics-App"
+    app_dir = script_dir if (script_dir / "package.json").is_file() else script_dir / "AppleMusic-Style-Title-App"
     if not (app_dir / "package.json").is_file():
         raise HostError(f"插件文件不完整：{app_dir}")
     electron = find_electron(script_dir)
@@ -589,13 +668,13 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as error:
-        log_dir = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "AMLL-Lyrics" / "logs"
+        log_dir = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "AppleMusic-Style-Title" / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         logging.basicConfig(filename=str(log_dir / "host.log"), level=logging.ERROR)
         logging.exception("AMLL host startup failed")
-        message = f"AMLL 歌词助手启动失败：{error}\n\n详细日志：{log_dir / 'host.log'}"
+        message = f"AppleMusic样式标题启动失败：{error}\n\n详细日志：{log_dir / 'host.log'}"
         print(message, file=sys.stderr)
         if os.name == "nt":
             import ctypes
-            ctypes.windll.user32.MessageBoxW(None, message, "AMLL 歌词助手", 0x10)
+            ctypes.windll.user32.MessageBoxW(None, message, "AppleMusic样式标题", 0x10)
         sys.exit(1)

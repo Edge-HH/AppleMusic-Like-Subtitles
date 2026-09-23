@@ -5,17 +5,17 @@
 ## 自动化验证
 
 - Node.js v22.23.1：离线自动化测试 32 项通过。
-- 新增范围与渲染测试覆盖：连续行范围重新归零、逐字相对时间、逐行降级、单一 AM Lyrics 的 256 字符上限、重叠歌词轨道分配。
+- 新增范围与渲染测试覆盖：连续行范围重新归零、逐字相对时间、逐行降级、单一 AppleMusic样式标题 的 256 字符上限、重叠歌词轨道分配。
 - 所有项目 JavaScript 文件通过 `node --check`。
 - PowerShell 安装／构建脚本通过现有测试链路。
 - npm 生产依赖按锁文件安装，初始审计无已知漏洞。
 
 ## Resolve Studio 20.3.2 底层 API 实测
 
-在仅用于 QA 的 `AM Lyrics QA ...` 项目中执行脚本验证，并在完成后清理本轮测试创建的时间线、媒体项和文件夹：
+在仅用于 QA 的 `AppleMusic样式标题 QA ...` 项目中执行脚本验证，并在完成后清理本轮测试创建的时间线、媒体项和文件夹：
 
-- `Timeline.SetMarkInOut(0, 47)` + `InsertFusionTitleIntoTimeline("AM Lyrics")` 创建 48 帧标题。
-- 可通过 `GetFusionCompByIndex(1)` 找到 `AMLLyrics` 宏并写入 `Lyrics`、`Timings`、`Offset`、`Duration`、`FPS`。
+- `Timeline.SetMarkInOut(0, 47)` + `InsertFusionTitleIntoTimeline("AppleMusic样式标题")` 创建 48 帧标题。
+- 可通过 `GetFusionCompByIndex(1)` 找到 `AppleMusicStyleTitle` 宏并写入 `Lyrics`、`Timings`、`Offset`、`Duration`、`FPS`。
 - `CreateFusionClip` 生成可复用媒体池 Fusion 源。
 - `MediaPool.AppendToTimeline` 使用 `trackIndex`、`recordFrame`、`startFrame`、`endFrame` 精确写入顶部新轨道；两句测试分别得到正确的 24 帧长度和绝对起点。
 - 两个已放置歌词片段可通过 `CreateFusionClip` 合并，合并片段范围与首尾歌词一致。
@@ -40,4 +40,4 @@
 - QQ QRC 逐字解密不在本版本；AMLL／YRC 逐字与 QQ 平台逐行来源必须区分。
 
 `npm run smoke` 会真实请求外部服务；任一平台受限时以非零状态退出，这是诊断结果而不是离线测试失败。
-- 安装新标题文件后，Resolve 需要重启才能刷新标题目录；未重启的进程可能把 `InsertFusionTitleIntoTimeline("AM Lyrics")` 解析为空 Fusion 合成。
+- 安装新标题文件后，Resolve 需要重启才能刷新标题目录；未重启的进程可能把 `InsertFusionTitleIntoTimeline("AppleMusic样式标题")` 解析为空 Fusion 合成。

@@ -3,8 +3,8 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 
-const GENERATED_FOLDER = 'AMLL 歌词生成';
-const TRACK_NAME = 'AMLL 歌词';
+const GENERATED_FOLDER = 'AppleMusic样式标题生成';
+const TRACK_NAME = 'AppleMusic样式标题';
 
 function values(collection) {
   if (!collection) return [];
@@ -14,18 +14,18 @@ function codePointLength(text) { return Array.from(String(text)).length; }
 function choosePreset(line) {
   const length = codePointLength(line.text);
   if (length > 256) throw new Error(`第 ${line._rangeLine || '?'} 行有 ${length} 个 Unicode 码点，超过单行 256 字符限制，请先拆行`);
-  return 'AM Lyrics';
+  return 'AppleMusic样式标题';
 }function seconds(ms) { return (Math.max(0, ms) / 1000).toFixed(3).replace(/\.?0+$/, ''); }
 function buildAmInputs(line, fps) {
   const durationMs = line.endMs - line.startMs;
   let segments;
   let timings;
   if (line.words.length) {
-    if (line.words.some(word => word.text.includes('|'))) throw new Error(`第 ${line._rangeLine || '?'} 行含有“|”，无法安全写入 AM Lyrics 分段语法`);
+    if (line.words.some(word => word.text.includes('|'))) throw new Error(`第 ${line._rangeLine || '?'} 行含有“|”，无法安全写入 AppleMusic样式标题 分段语法`);
     segments = line.words.map(word => word.text);
     timings = line.words.map(word => `${seconds(word.startMs - line.startMs)}-${seconds(word.endMs - line.startMs)}`);
   } else {
-    if (line.text.includes('|')) throw new Error(`第 ${line._rangeLine || '?'} 行含有“|”，无法安全写入 AM Lyrics 分段语法`);
+    if (line.text.includes('|')) throw new Error(`第 ${line._rangeLine || '?'} 行含有“|”，无法安全写入 AppleMusic样式标题 分段语法`);
     // 逐行来源只创建一个整体段，避免伪造逐字时间。
     segments = [line.text];
     timings = [`0-${seconds(durationMs)}`];
@@ -100,9 +100,9 @@ async function setToolInputs(tool, inputs) {
 }
 async function configureAmTitle(item, line, fps) {
   const comp = await compForItem(item);
-  if (!comp) throw new Error('AM Lyrics 标题没有可编辑的 Fusion 合成');
-  const macro = await comp.FindTool('AMLLyrics');
-  if (!macro) throw new Error('所选 AM Lyrics 预设缺少 AMLLyrics 控制器，请重新安装当前仓库生成的标题预设');
+  if (!comp) throw new Error('AppleMusic样式标题 标题没有可编辑的 Fusion 合成');
+  const macro = await comp.FindTool('AppleMusicStyleTitle');
+  if (!macro) throw new Error('所选 AppleMusic样式标题 预设缺少 AppleMusicStyleTitle 控制器，请重新安装当前仓库生成的标题预设');
   await setToolInputs(macro, buildAmInputs(line, fps));
 }
 async function toolAttrs(tool) {
@@ -133,7 +133,7 @@ async function createTitleSeed({ mediaPool, scratch, titleSource, customSource, 
   let sourceItem;
   if (titleSource.startsWith('am-')) {
     if (!await scratch.SetMarkInOut(0, durationFrames - 1, 'video')) throw new Error('无法设置标题源长度');
-    sourceItem = await scratch.InsertFusionTitleIntoTimeline('AM Lyrics');
+    sourceItem = await scratch.InsertFusionTitleIntoTimeline('AppleMusic样式标题');
   } else {
     sourceItem = values(await mediaPool.AppendToTimeline([{ mediaPoolItem: customSource, startFrame: 0, endFrame: durationFrames,
       mediaType: 1, trackIndex: 1, recordFrame: await scratch.GetStartFrame() }]))[0];
@@ -141,13 +141,13 @@ async function createTitleSeed({ mediaPool, scratch, titleSource, customSource, 
   if (!sourceItem || !await sourceItem.ExportFusionComp(templatePath, 1)) throw new Error('无法导出现有标题节点');
   if (!titleSource.startsWith('am-')) return customSource;
   const comp = await compForItem(sourceItem);
-  const macro = comp && await comp.FindTool('AMLLyrics');
-  if (!macro) throw new Error('标题缺少 AMLLyrics 控制器');
+  const macro = comp && await comp.FindTool('AppleMusicStyleTitle');
+  if (!macro) throw new Error('标题缺少 AppleMusicStyleTitle 控制器');
   await macro.SetInput('Lyrics', '');
   const carrier = await scratch.CreateFusionClip([sourceItem]);
   const seed = carrier && await carrier.GetMediaPoolItem();
   if (!seed) throw new Error('无法建立可复用的 Fusion 定位源');
-  await seed.SetClipProperty('Clip Name', 'AMLL 标题定位源（共享，不含歌词）');
+  await seed.SetClipProperty('Clip Name', 'AppleMusic样式标题定位源（共享，不含歌词）');
   return seed;
 }
 async function installTitleGraph(item, templatePath, line, fps, builtIn) {
@@ -158,7 +158,7 @@ async function installTitleGraph(item, templatePath, line, fps, builtIn) {
   for (const name of previous) if (!await item.DeleteFusionCompByName(name)) throw new Error('无法清除旧包装合成');
   if (builtIn) await configureAmTitle(item, line, fps);
   else await configureGenericTitle(item, line);
-  await item.SetName(line.text.slice(0, 80) || 'AM Lyrics');
+  await item.SetName(line.text.slice(0, 80) || 'AppleMusic样式标题');
 }
 async function timelineIdentity(timeline) {
   const name = String(await timeline.GetName());
@@ -180,7 +180,7 @@ module.exports = {
     const root = await mediaPool.GetRootFolder();
     return {
       builtIn: [
-        { key: 'am-default', name: 'AM Lyrics', timing: 'word' },
+        { key: 'am-default', name: 'AppleMusic样式标题', timing: 'word' },
       ],
       mediaPool: await scanFusionItems(root),
     };
@@ -209,11 +209,11 @@ module.exports = {
     const inserted = [], createdTracks = [];
     let scratch = null, seed = null, finalItem = null;
     const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'amll-title-'));
-    const templatePath = path.join(temporary, 'AM Lyrics.comp');
+    const templatePath = path.join(temporary, 'AppleMusic样式标题.comp');
     try {
       report('正在准备可复用标题源');
       await mediaPool.SetCurrentFolder(await getOrCreateGeneratedFolder(mediaPool));
-      scratch = await mediaPool.CreateEmptyTimeline(`AMLL 临时 ${Date.now()}`);
+      scratch = await mediaPool.CreateEmptyTimeline(`AppleMusic样式标题 临时 ${Date.now()}`);
       if (!scratch || !await project.SetCurrentTimeline(scratch)) throw new Error('无法创建歌词准备时间线');
       seed = await createTitleSeed({ mediaPool, scratch, titleSource, customSource, durationFrames: Math.max(...durations) + 1, templatePath });
       if (!await project.SetCurrentTimeline(timeline)) throw new Error('无法切回原时间线');
@@ -247,7 +247,7 @@ module.exports = {
       try { if (finalItem) await timeline.DeleteClips([finalItem], false); else if (inserted.length) await timeline.DeleteClips(inserted, false); } catch { /* Best-effort rollback of new items only. */ }
       try { await deleteEmptyCreatedTracks(timeline, createdTracks); } catch { /* Do not touch existing tracks. */ }
       try { if (seed && builtIn) await mediaPool.DeleteClips([seed]); } catch { /* Never delete a user's custom template. */ }
-      throw new Error(`${error.message}；已尝试回滚本次新增片段，请检查 AMLL 歌词轨道`);
+      throw new Error(`${error.message}；已尝试回滚本次新增片段，请检查 AppleMusic样式标题轨道`);
     } finally {
       try { await project.SetCurrentTimeline(timeline); if (scratch) await mediaPool.DeleteTimelines([scratch]); await mediaPool.SetCurrentFolder(originalFolder); } catch { /* Cleanup must not replace the write result. */ }
       const resolved = path.resolve(temporary);

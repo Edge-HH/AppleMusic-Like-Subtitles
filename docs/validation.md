@@ -126,7 +126,7 @@
 
 在空白工程中完成以下检查，尤其是 19 或免费版：
 
-- [ ] 重启后效果库只出现一个 AM Lyrics，不再出现 32 / 64。
+- [ ] 重启后效果库只出现一个 AppleMusic样式标题，不再出现 32 / 64。
 - [ ] 拖入后默认中文正常显示，无红色报错节点或字体缺失。
 - [ ] 控制 / Style 两页参数清楚可用，颜色选择器、字体字重配对正常。
 - [ ] 修改歌词，无需进入 Fusion 即能生效。
@@ -149,10 +149,10 @@
 ## Scripts 插件时间线导入验证（2026-09-19）
 
 - 插件离线测试增至 32 项，覆盖歌词范围重新对齐、逐字时间写入、逐行降级、256 字符上限和重叠轨道分配。
-- 在本机 Resolve Studio 20.3.2 的隔离 QA 项目中验证公开 API 链路：按指定帧数实例化 `AM Lyrics`、写入宏控件、转换为媒体池 Fusion 源、精确追加到最高轨道之上的新轨道，并把多句合并为单一 Fusion 片段。
+- 在本机 Resolve Studio 20.3.2 的隔离 QA 项目中验证公开 API 链路：按指定帧数实例化 `AppleMusic样式标题`、写入宏控件、转换为媒体池 Fusion 源、精确追加到最高轨道之上的新轨道，并把多句合并为单一 Fusion 片段。
 - QA 脚本完成后删除本轮临时时间线、媒体项和文件夹；没有在用户项目上执行破坏性测试。
 - 尚未调用 Computer Use 完成插件 UI 点击回归；普通 Scripts 入口改造后的实际菜单和时间线写入由用户在本机验收。
-- 2026-09-19 直接替换用户模板文件后，当前已运行的 Resolve 进程仍保留旧的标题目录缓存；`InsertFusionTitleIntoTimeline("AM Lyrics")` 在不重启 Resolve 时可能得到空 Fusion 合成。安装器因此要求重启 Resolve；重启后再验收标题目录。
+- 2026-09-19 直接替换用户模板文件后，当前已运行的 Resolve 进程仍保留旧的标题目录缓存；`InsertFusionTitleIntoTimeline("AppleMusic样式标题")` 在不重启 Resolve 时可能得到空 Fusion 合成。安装器因此要求重启 Resolve；重启后再验收标题目录。
 - 已通过 `ImportFusionComp` + 项目 PNG 渲染验证此前单模板图像输出；本轮修复将当前字改为静态字形、移除独立 CurrentBlur，并需要重启 Resolve 后重新验收。
 
 详见 [`workflow-plugin/docs/verification.md`](../workflow-plugin/docs/verification.md)。
@@ -160,4 +160,4 @@
 
 ## 普通 Scripts 入口（2026-09-19）
 
-由于用户环境的 Resolve 20 没有“工作区 → 工作流程集成”菜单，当前插件入口改为 **工作区 → 脚本 → Utility → AMLL 歌词助手**。安装器会备份并删除旧的 `com.edgehh.amll.lyrics` Workflow 安装，再安装 Python Script 宿主和本地 Electron 界面；本次只做了代码级语法检查，实际菜单显示与用户项目写入由用户自行验收。
+由于用户环境的 Resolve 20 没有“工作区 → 工作流程集成”菜单，当前插件入口改为 **工作区 → 脚本 → Utility → AppleMusic样式标题**。安装器会备份并删除旧的 `com.edgehh.amll.lyrics` Workflow 安装，再安装 Python Script 宿主和本地 Electron 界面；本次只做了代码级语法检查，实际菜单显示与用户项目写入由用户自行验收。

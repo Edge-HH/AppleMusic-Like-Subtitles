@@ -61,7 +61,7 @@ async function renderer(command) {
 }
 
 const normalReply = request => ({ ok: true, data: request.action === 'context' ? info : request.action === 'titleSources'
-  ? { builtIn: [{ key: 'am-default', name: 'AM Lyrics' }], mediaPool: [] }
+  ? { builtIn: [{ key: 'am-default', name: 'AppleMusic样式标题' }], mediaPool: [] }
   : { insertedCount: 1, sourceLineCount: 1, createdTrackCount: 1 } });
 
 // Python dispatch('context') deliberately sends only the serializable flat info object.
